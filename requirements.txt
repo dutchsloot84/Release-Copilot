@@ -8,6 +8,7 @@ openpyxl
 rich
 tqdm
 pydantic
+pydantic-settings
 tenacity
 pyyaml
 pytest

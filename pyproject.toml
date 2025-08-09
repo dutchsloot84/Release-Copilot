@@ -1,0 +1,12 @@
+[project]
+name = "release-copilot"
+version = "0.1.0"
+description = "Local-only POC to audit releases by comparing Jira issues and Bitbucket commits."
+authors = [{name = "Release Copilot"}]
+requires-python = ">=3.11"
+readme = "README.md"
+license = {file = "LICENSE"}
+dependencies = []
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

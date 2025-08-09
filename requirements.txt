@@ -1,0 +1,13 @@
+crewai
+langgraph
+langchain
+llama-index
+python-dotenv
+requests
+openpyxl
+rich
+tqdm
+pydantic
+tenacity
+pyyaml
+pytest

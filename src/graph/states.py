@@ -8,6 +8,7 @@ class RunState(BaseModel):
     repo: str
     branch: str
     since: Optional[str] = None
+    jql: Optional[str] = None
     jira_issues: List[Dict] = []
     commits: List[Dict] = []
     matches: List[Dict] = []

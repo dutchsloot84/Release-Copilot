@@ -7,7 +7,7 @@ def compile_graph():
     def run(state: RunState) -> RunState:
         plan = planner.plan_run(state.fix_version, state.project, state.repo, state.branch)
         if 'collect_jira' in plan.steps:
-            state.jira_issues = jira_analyst.collect_jira(state.fix_version).issues
+            state.jira_issues = jira_analyst.collect_jira(state.jql, state.fix_version).issues
         if 'collect_commits' in plan.steps:
             state.commits = git_historian.collect_commits(state.project, state.repo, state.branch, state.since).commits
         if 'compare' in plan.steps:

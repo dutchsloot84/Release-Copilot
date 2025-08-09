@@ -1,5 +1,7 @@
+from pathlib import Path
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
+import yaml
 
 class Settings(BaseSettings):
     openai_api_key: str = Field('', env='OPENAI_API_KEY')
@@ -27,6 +29,9 @@ class Settings(BaseSettings):
 
     enable_llamaindex: bool = Field(False, env='ENABLE_LLAMAINDEX')
 
+    default_jql: str | None = Field(None, env='DEFAULT_JQL')
+    queries_yaml_path: str = Field('config/queries.yml', env='QUERIES_YAML_PATH')
+
     model_config = {
         'env_file': '.env'
     }
@@ -36,5 +41,14 @@ class Settings(BaseSettings):
         if isinstance(v, bool):
             return v
         return str(v).lower() in {'1', 'true', 'yes', 'on'}
+
+
+def load_query_presets(path: str | None = None) -> dict[str, str]:
+    p = Path(path or settings.queries_yaml_path)
+    if not p.exists():
+        return {}
+    with p.open('r', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    return (data.get('queries') or {}) if isinstance(data, dict) else {}
 
 settings = Settings()

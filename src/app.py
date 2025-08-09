@@ -28,6 +28,7 @@ def run_release_audit(
     repo: str,
     branch: str,
     since: Optional[str] = None,
+    jql: Optional[str] = None,
     enable_confluence: bool = False,
     enable_llamaindex: bool = False,
     dry_run: bool = False,
@@ -52,6 +53,7 @@ def run_release_audit(
             repo=repo,
             branch=branch,
             since=since,
+            jql=jql,
         )
 
         graph = compile_graph()
@@ -104,11 +106,25 @@ def main() -> None:
     parser.add_argument('--enable-confluence', action='store_true')
     parser.add_argument('--enable-llamaindex', action='store_true')
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--jql', type=str, default=None, help='Custom JQL to run (overrides defaults).')
+    parser.add_argument('--jql-preset', type=str, default=None, help='Name of a JQL preset from config/queries.yml')
     args = parser.parse_args()
 
     if args.wizard:
         env_wizard.run_wizard()
         return
+
+    from src.config.settings import load_query_presets
+
+    presets = load_query_presets()
+    effective_jql = None
+    if args.jql:
+        effective_jql = args.jql
+    elif args.jql_preset:
+        if args.jql_preset not in presets:
+            raise SystemExit(f"Unknown JQL preset '{args.jql_preset}'. Available: {', '.join(presets.keys()) or '(none)'}")
+        tmpl = presets[args.jql_preset]
+        effective_jql = tmpl.format(fix_version=args.fix_version) if "{fix_version}" in tmpl else tmpl
 
     res = run_release_audit(
         fix_version=args.fix_version,
@@ -116,6 +132,7 @@ def main() -> None:
         repo=args.repo,
         branch=args.branch,
         since=args.since,
+        jql=effective_jql,
         enable_confluence=args.enable_confluence,
         enable_llamaindex=args.enable_llamaindex,
         dry_run=args.dry_run,

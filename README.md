@@ -46,6 +46,30 @@ Troubleshooting:
 python -m src.app --fix-version r-55.1 --project STARSYSONE --repo claimcenter --branch release/r-55.1 --since 2025-07-01
 ```
 
+### JQL options
+
+Default (uses `DEFAULT_JQL` with `{fix_version}`):
+
+```bash
+python -m src.app --fix-version "Mobilitas 2025.08.22" --project STARSYSONE --repo claimcenter --branch release/r-55.1
+```
+
+Use preset:
+
+```bash
+python -m src.app --fix-version "Mobilitas 2025.08.22" --jql-preset mobilitas_standard
+```
+
+Custom JQL (Windows quoting tip):
+
+```bash
+python -m src.app --jql "project = MOBI AND fixVersion = \"Mobilitas 2025.08.22\" AND statusCategory != Done"
+```
+
+On PowerShell, escape inner quotes as `\"...\"`. On bash, you can wrap the whole string in single quotes.
+
+Streamlit UI: select a preset or paste a custom JQL; custom overrides the preset.
+
 ## Cost
 A full run typically costs **$0.25–$0.80** depending on models. Re-running with cached API results costs near $0.
 

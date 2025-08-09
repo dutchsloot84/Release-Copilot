@@ -1,14 +1,14 @@
 from typing import List, Dict
 from pydantic import BaseModel
 
-from src.tools.jira_tools import get_jira_issues_for_fixversion
+from src.tools.jira_tools import get_jira_issues
 
 
 class JiraIssues(BaseModel):
     issues: List[Dict]
 
 
-def collect_jira(fix_version: str) -> JiraIssues:
-    raw = get_jira_issues_for_fixversion(fix_version)
-    issues = [{'key': i.get('key'), 'summary': i.get('fields', {}).get('summary', '')} for i in raw]
+def collect_jira(jql: str | None = None, fix_version: str | None = None) -> JiraIssues:
+    raw = get_jira_issues(jql=jql, fix_version=fix_version)
+    issues = [{'key': i.get('key'), 'summary': i.get('summary', ''), 'status': i.get('status', '')} for i in raw]
     return JiraIssues(issues=issues)

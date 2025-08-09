@@ -7,6 +7,7 @@ from ui_backend import RunThread, tail_file
 
 # Import the callable pipeline
 from src.app import run_release_audit  # relies on your refactor above
+from src.config.settings import load_query_presets
 
 load_dotenv()
 
@@ -35,6 +36,14 @@ with col2:
     since_date: Optional[date] = st.date_input("Changes since (optional)", value=None)
     since = since_date.isoformat() if since_date else None
 
+presets = load_query_presets()
+st.subheader("JQL")
+c1, c2 = st.columns([1, 2])
+with c1:
+    preset_name = st.selectbox("Preset", options=["(none)"] + sorted(list(presets.keys())))
+with c2:
+    custom_jql = st.text_area("Custom JQL (overrides preset)", value="", height=100, placeholder='Leave blank to use preset or default')
+
 adv = st.expander("Advanced", expanded=False)
 with adv:
     enable_confluence = st.checkbox("Publish to Confluence (optional)", value=False)
@@ -59,12 +68,14 @@ def render_logs(log_path: str):
 
 if run_clicked:
     # Kick off background run
+    jql_to_use = custom_jql.strip() if custom_jql.strip() else (presets.get(preset_name) if preset_name != "(none)" else None)
     kwargs = dict(
         fix_version=fix_version,
         project=project,
         repo=repo,
         branch=branch,
         since=since,
+        jql=jql_to_use,
         enable_confluence=enable_confluence,
         enable_llamaindex=enable_llamaindex,
         dry_run=dry_run,

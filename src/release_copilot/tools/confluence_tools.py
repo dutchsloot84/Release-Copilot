@@ -2,8 +2,8 @@ from typing import Dict
 import requests
 from langchain.tools import tool
 
-from src.config.settings import settings
-from src.kit.errors import ApiError, ConfigError
+from release_copilot.config.settings import settings
+from release_copilot.kit.errors import ApiError, ConfigError
 
 
 @tool

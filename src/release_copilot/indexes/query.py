@@ -1,6 +1,6 @@
 from typing import List
 
-from src.config.settings import settings
+from release_copilot.config.settings import settings
 
 
 def query_knowledge(prompt: str) -> List[str]:

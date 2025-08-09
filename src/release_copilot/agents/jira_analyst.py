@@ -1,7 +1,7 @@
 from typing import List, Dict
 from pydantic import BaseModel
 
-from src.tools.jira_tools import get_jira_issues
+from release_copilot.tools.jira_tools import get_jira_issues
 
 
 class JiraIssues(BaseModel):

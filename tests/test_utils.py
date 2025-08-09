@@ -1,5 +1,5 @@
-from src.tools.bitbucket_tools import extract_jira_keys
-from src.agents.report_writer import compare_jira_and_commits
+from release_copilot.tools.bitbucket_tools import extract_jira_keys
+from release_copilot.agents.report_writer import compare_jira_and_commits
 
 
 def test_extract_jira_keys():

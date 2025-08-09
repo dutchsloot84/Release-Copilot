@@ -3,11 +3,11 @@ import streamlit as st
 from dotenv import load_dotenv
 from datetime import date
 from typing import Optional
-from ui_backend import RunThread, tail_file
+from .ui_backend import RunThread, tail_file
 
 # Import the callable pipeline
-from src.app import run_release_audit  # relies on your refactor above
-from src.config.settings import load_query_presets
+from release_copilot.app import run_release_audit  # relies on your refactor above
+from release_copilot.config.settings import load_query_presets
 
 load_dotenv()
 

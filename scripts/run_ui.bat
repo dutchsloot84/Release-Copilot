@@ -20,9 +20,16 @@ pip install -r requirements.txt >nul 2>&1 || (
   exit /b 1
 )
 
+echo Installing package in editable mode...
+pip install -e . >nul 2>&1 || (
+  echo Editable install failed. Check pyproject.toml and try again.
+  pause >nul
+  exit /b 1
+)
+
 if not exist ".env" (
   echo No .env found. Launching first-run wizard...
-  python -m src.config.env_wizard || (
+  python -m release_copilot.config.env_wizard || (
     echo Wizard failed. Please fix credentials and retry.
     pause >nul
     exit /b 1
@@ -30,7 +37,7 @@ if not exist ".env" (
 )
 
 echo Starting Streamlit UI...
-streamlit run src/ui/streamlit_app.py
+streamlit run src/release_copilot/ui/streamlit_app.py
 REM To change port, add: --server.port 8502
 set EXITCODE=%ERRORLEVEL%
 endlocal & exit /b %EXITCODE%

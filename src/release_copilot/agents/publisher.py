@@ -1,8 +1,8 @@
 from pathlib import Path
 from pydantic import BaseModel
 
-from src.config.settings import settings
-from src.tools.confluence_tools import publish_confluence
+from release_copilot.config.settings import settings
+from release_copilot.tools.confluence_tools import publish_confluence
 
 
 class PublishResult(BaseModel):

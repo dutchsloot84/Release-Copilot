@@ -3,8 +3,8 @@ import requests
 from langchain.tools import tool
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from src.config.settings import settings
-from src.kit.caching import cache_json
+from release_copilot.config.settings import settings
+from release_copilot.kit.caching import cache_json
 
 BASE = settings.jira_base_url
 AUTH = (settings.jira_email, settings.jira_api_token)

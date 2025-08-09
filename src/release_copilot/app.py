@@ -8,10 +8,10 @@ from typing import Optional, Dict, Any
 from rich.console import Console
 from rich.progress import Progress
 
-from src.config import env_wizard
-from src.graph.states import RunState
-from src.graph.graph import compile_graph
-from src.kit.cost_meter import CostSession
+from release_copilot.config import env_wizard
+from release_copilot.graph.states import RunState
+from release_copilot.graph.graph import compile_graph
+from release_copilot.kit.cost_meter import CostSession
 
 LOG_PATH = Path('logs/release-copilot.log')
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -114,7 +114,7 @@ def main() -> None:
         env_wizard.run_wizard()
         return
 
-    from src.config.settings import load_query_presets
+    from release_copilot.config.settings import load_query_presets
 
     presets = load_query_presets()
     effective_jql = None

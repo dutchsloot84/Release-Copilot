@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional
 from pydantic import BaseModel
 
-from src.tools.bitbucket_tools import get_commits_by_branch
+from release_copilot.tools.bitbucket_tools import get_commits_by_branch
 
 
 class Commits(BaseModel):

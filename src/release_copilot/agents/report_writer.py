@@ -2,7 +2,7 @@ from typing import List, Dict
 from pathlib import Path
 from pydantic import BaseModel
 
-from src.tools import file_tools
+from release_copilot.tools import file_tools
 
 
 class Report(BaseModel):

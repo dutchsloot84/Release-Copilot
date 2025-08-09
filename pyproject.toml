@@ -8,5 +8,18 @@ readme = "README.md"
 license = {file = "LICENSE"}
 dependencies = []
 
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+release-copilot = "release_copilot.app:main"
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]

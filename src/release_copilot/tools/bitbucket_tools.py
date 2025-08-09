@@ -5,9 +5,9 @@ import requests
 from langchain.tools import tool
 from tenacity import retry, wait_fixed, stop_after_attempt
 
-from src.config.settings import settings
-from src.kit.caching import cache_json
-from src.kit.errors import ApiError
+from release_copilot.config.settings import settings
+from release_copilot.kit.caching import cache_json
+from release_copilot.kit.errors import ApiError
 
 JIRA_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
 

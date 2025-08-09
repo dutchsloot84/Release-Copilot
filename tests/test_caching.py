@@ -1,6 +1,6 @@
 import os
 import time
-from src.kit.caching import cache_json
+from release_copilot.kit.caching import cache_json
 
 
 def test_cache_ttl(monkeypatch):

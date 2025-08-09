@@ -1,6 +1,6 @@
 from pathlib import Path
-from src.graph.states import RunState
-from src.agents import planner, jira_analyst, git_historian, report_writer, publisher
+from release_copilot.graph.states import RunState
+from release_copilot.agents import planner, jira_analyst, git_historian, report_writer, publisher
 
 
 def compile_graph():

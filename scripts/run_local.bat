@@ -7,3 +7,4 @@ if %errorlevel% equ 0 (
   echo Outputs written to data/outputs
   start data/outputs
 )
+pause

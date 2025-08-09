@@ -20,6 +20,26 @@ python -m src.app --fix-version r-55.1 --project STARSYSONE --repo claimcenter -
 
 Artifacts are written to `data/outputs/release_audit.xlsx` and `release_report.md`.
 
+## One-Click UI (Local)
+
+**Windows**
+- Double-click: `scripts/run_ui.bat`
+- First launch runs a setup wizard if `.env` is missing.
+
+**macOS/Linux**
+```bash
+chmod +x scripts/run_ui.sh
+./scripts/run_ui.sh
+
+If port 8501 is busy, run:
+
+streamlit run src/ui/streamlit_app.py --server.port 8502
+```
+
+Troubleshooting:
+- Ensure Python 3.11+ and `pip` are on PATH.
+- Corporate proxy/SSL: set `HTTP_PROXY/HTTPS_PROXY` and `REQUESTS_CA_BUNDLE` if needed.
+
 ## Example
 
 ```bash

@@ -11,3 +11,4 @@ pydantic
 tenacity
 pyyaml
 pytest
+streamlit>=1.35

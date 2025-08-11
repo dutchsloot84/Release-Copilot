@@ -100,3 +100,51 @@ A full run typically costs **$0.25–$0.80** depending on models. Re-running wit
 ## Optional features
 * Confluence publishing: enable by setting `CONFLUENCE_ENABLED=true` in `.env` or passing `--enable-confluence`.
 * LlamaIndex: toggle with `ENABLE_LLAMAINDEX=true`.
+
+## Audit from JSON config
+
+`release_copilot.commands.audit_from_config` reads a config file that
+lists repositories and default branches, then fetches commits for each
+repo/branch pair. A minimal config:
+
+```json
+{
+  "repos": {
+    "STARSYSONE/policycenter": "PC",
+    "STARSYSONE/contactmanager": "CM"
+  },
+  "release_branch": "release/r-55.0",
+  "develop_branch": "develop"
+}
+```
+
+CLI overrides take precedence over config values. Branch selection is
+mutually exclusive: use `--develop-only` or `--release-only`; without either
+flag both branches are processed (release first). Repos are always taken from
+the config.
+
+Results are cached under `data/.cache` using a key composed of project,
+repo, branch and date window. Control cache behaviour with
+`--cache-ttl-hours` and `--force-refresh`.
+
+Example:
+
+```bash
+# Run both release and develop for all repos in config.json
+python -m release_copilot.commands.audit_from_config \
+  --config config/release_audit_config.json \
+  --cache-ttl-hours 12
+
+# Release only, override release branch and force-refresh cache
+python -m release_copilot.commands.audit_from_config \
+  --config config/release_audit_config.json \
+  --release-only \
+  --release-branch release/r-55.1 \
+  --force-refresh
+
+# Develop only, override both branches from CLI (develop-only means only develop is used)
+python -m release_copilot.commands.audit_from_config \
+  --config config/release_audit_config.json \
+  --develop-only \
+  --develop-branch develop
+```

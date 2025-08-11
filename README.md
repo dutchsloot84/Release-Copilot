@@ -56,8 +56,20 @@ Both scripts install requirements, perform an editable install, then run:
 
 ```
 Wizard: python -m release_copilot.config.env_wizard
-App:    python -m release_copilot.app
+App:    python -m release_copilot.commands.audit_from_config
 ```
+
+### Guided CLI (friendly prompts)
+
+Double-click `scripts/run_local.bat` (Windows) or run `./scripts/run_local.sh` (macOS/Linux) with **no args** and you’ll get:
+
+- auto-detect config JSON
+- pick branch mode (release/develop/both)
+- optional Fix Version (enables Jira comparison)
+- optional LLM narrative (model + budget)
+- summary screen, then run
+
+The script remembers your **last run** in `data/.last_run.json` so you can repeat with one keystroke. On success it opens `data/outputs/` automatically.
 
 ## Example
 

@@ -17,6 +17,7 @@ dist/
 # Data
 /data/outputs/
 /data/.cache/
+/data/.last_run.json
 /logs/
 
 # Others

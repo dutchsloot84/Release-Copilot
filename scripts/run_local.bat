@@ -38,14 +38,9 @@ set "LLM_BUDGET=8"
 set "FORCE_REFRESH=N"
 
 REM Offer last run
-for /f "usebackq tokens=2 delims=:, {}" %%A in (`python - <<PY
-from scripts._common_args import load_last
-print({"has_last": bool(load_last())})
-PY`) do set HAS_LAST=%%A
-
-if /I "%HAS_LAST%"=="True" (
+if exist "data\.last_run.json" (
   echo.
-  set /p USE_LAST=Run with last settings? (Y/N) [N]: 
+  set /p USE_LAST=Run with last settings? (Y/N) [N]:
   if /I "!USE_LAST!"=="Y" goto :RUN_LAST
 )
 
@@ -91,40 +86,13 @@ echo Force refresh: %FORCE_REFRESH%
 echo.
 
 REM Build args via Python helper
-python - <<PY >"%TEMP%\rc_args.txt"
-from scripts._common_args import build_args, save_last
-import os, json
-config = r"%CONFIG%"
-release_only = os.environ.get("BRANCH_MODE","both").lower()=="release"
-develop_only = os.environ.get("BRANCH_MODE","both").lower()=="develop"
-fix_version = os.environ.get("FIX_VERSION") or None
-write_llm = (os.environ.get("WRITE_LLM","N").upper()=="Y")
-llm_model = os.environ.get("LLM_MODEL","gpt-4o-mini")
-llm_budget = int(os.environ.get("LLM_BUDGET","8") or "8")
-force_refresh = (os.environ.get("FORCE_REFRESH","N").upper()=="Y")
-args = build_args(
-    config_path=config,
-    release_only=release_only,
-    develop_only=develop_only,
-    fix_version=fix_version,
-    write_llm=write_llm,
-    llm_model=llm_model,
-    llm_budget_cents=llm_budget,
-    force_refresh=force_refresh,
-)
-save_last(args)
-print(" ".join(args))
-PY
+python -c "from scripts._common_args import build_args, save_last; import os, json; config=r'%CONFIG%'; release_only=os.environ.get('BRANCH_MODE','both').lower()=='release'; develop_only=os.environ.get('BRANCH_MODE','both').lower()=='develop'; fix_version=os.environ.get('FIX_VERSION') or None; write_llm=(os.environ.get('WRITE_LLM','N').upper()=='Y'); llm_model=os.environ.get('LLM_MODEL','gpt-4o-mini'); llm_budget=int(os.environ.get('LLM_BUDGET','8') or '8'); force_refresh=(os.environ.get('FORCE_REFRESH','N').upper()=='Y'); args=build_args(config_path=config, release_only=release_only, develop_only=develop_only, fix_version=fix_version, write_llm=write_llm, llm_model=llm_model, llm_budget_cents=llm_budget, force_refresh=force_refresh); save_last(args); print(' '.join(args))" >"%TEMP%\rc_args.txt"
 
 set /p RUNLINE=<"%TEMP%\rc_args.txt"
 goto :RUN_BUILT
 
 :RUN_LAST
-python - <<PY >"%TEMP%\rc_args.txt"
-from scripts._common_args import load_last
-args = load_last() or []
-print(" ".join(args))
-PY
+python -c "from scripts._common_args import load_last; import sys; print(' '.join(load_last() or []))" >"%TEMP%\rc_args.txt"
 set /p RUNLINE=<"%TEMP%\rc_args.txt"
 goto :RUN_BUILT
 

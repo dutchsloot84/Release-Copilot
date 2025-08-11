@@ -167,3 +167,24 @@ Cost controls:
 - Sends only compact highlights (top N lines per repo), not full logs.
 - Enforces a hard budget (`--llm-budget-cents`), otherwise skips.
 - Caches output by fingerprint — reruns are free unless highlights change.
+
+### Jira comparison (missing stories & orphan commits)
+
+When you provide `--fix-version` or `--jql`, Release Copilot will:
+
+1. Fetch Jira issues via JQL (cached).
+2. Extract Jira keys from commit messages.
+3. Compare sets and write:
+   - `missing_in_repo.csv` — Jira issues with no matching commit
+   - `orphan_commits.csv` — Commits with no Jira key or keys not in the Jira set
+
+These are linked from `release_audit.md` and included as sheets in `release_audit.xlsx`.
+
+Examples:
+```bash
+python -m release_copilot.commands.audit_from_config \
+  --config config/release_audit_config.json \
+  --release-only \
+  --fix-version "Mobilitas 2025.08.22" \
+  --jql-ttl-hours 12
+```

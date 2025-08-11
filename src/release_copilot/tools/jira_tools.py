@@ -1,67 +1,51 @@
-from typing import List
+from __future__ import annotations
 import requests
-from langchain.tools import tool
-from tenacity import retry, stop_after_attempt, wait_exponential
+from typing import List, Dict, Any
+from release_copilot.kit.caching import load_cache_or_call
+from release_copilot.config.settings import Settings
 
-from release_copilot.config.settings import settings
-from release_copilot.kit.caching import cache_json
-
-BASE = settings.jira_base_url
+settings = Settings()
+JIRA = (settings.jira_base_url or "").rstrip("/")
 AUTH = (settings.jira_email, settings.jira_api_token)
 
-
-def _resolve_jql(user_jql: str | None, fix_version: str | None) -> str:
-    if user_jql and user_jql.strip():
-        return user_jql.strip()
-    tmpl = (settings.default_jql or '').strip()
-    if tmpl:
-        if '{fix_version}' in tmpl and not fix_version:
-            raise ValueError('DEFAULT_JQL requires {fix_version}, but fix_version is missing.')
-        return tmpl.format(fix_version=fix_version) if '{fix_version}' in tmpl else tmpl
-    if fix_version:
-        return f'fixVersion = "{fix_version}" ORDER BY key'
-    raise ValueError('No JQL provided and no fix_version available to build a default query.')
+_FIELDS = "key,summary,status,issuetype,assignee,fixVersions,updated"
+_MAX_RESULTS = 100
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
-def _jira_search(jql: str, start_at: int = 0, max_results: int = 50, fields: str = 'key,summary,status'):
-    params = {
-        'jql': jql,
-        'startAt': start_at,
-        'maxResults': max_results,
-        'fields': fields,
-    }
-    r = requests.get(f'{BASE}/rest/api/2/search', params=params, auth=AUTH, timeout=10)
+def _search_once(jql: str, start_at: int = 0, max_results: int = _MAX_RESULTS) -> Dict[str, Any]:
+    url = f"{JIRA}/rest/api/2/search"
+    params = {"jql": jql, "startAt": start_at, "maxResults": max_results, "fields": _FIELDS}
+    r = requests.get(url, params=params, auth=AUTH, timeout=30)
     r.raise_for_status()
     return r.json()
 
 
-@cache_json('jira', ttl_hours=12)
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
-def _fetch_jira_issues(jql: str) -> List[dict]:
-    issues: List[dict] = []
-    start = 0
-    page_size = 200
-    while True:
-        data = _jira_search(jql + ' ORDER BY key', start_at=start, max_results=page_size)
-        page = data.get('issues', [])
-        issues.extend([
-            {
-                'key': i['key'],
-                'summary': i['fields']['summary'],
-                'status': i['fields']['status']['name'],
-            }
-            for i in page
-        ])
-        if len(page) < page_size:
-            break
-        start += page_size
-    return issues
+def search_issues_cached(jql: str, ttl_hours: int = 12, force_refresh: bool = False) -> List[Dict[str, Any]]:
+    key = f"jira:search|jql={jql}|fields={_FIELDS}"
 
+    def fetch():
+        data = _search_once(jql, start_at=0)
+        total = int(data.get("total", 0))
+        issues = data.get("issues", [])
+        start = _MAX_RESULTS
+        while len(issues) < total:
+            page = _search_once(jql, start_at=start)
+            issues.extend(page.get("issues", []))
+            start += _MAX_RESULTS
+        out = []
+        for i in issues:
+            f = i.get("fields", {})
+            out.append({
+                "key": i.get("key"),
+                "summary": f.get("summary"),
+                "status": (f.get("status") or {}).get("name"),
+                "issuetype": (f.get("issuetype") or {}).get("name"),
+                "assignee": ((f.get("assignee") or {}).get("displayName") or ""),
+                "fixVersions": [v.get("name") for v in (f.get("fixVersions") or [])],
+                "updated": f.get("updated"),
+                "self": i.get("self"),
+            })
+        return {"issues": out}
 
-@tool('get_jira_issues', return_direct=False)
-def get_jira_issues(jql: str | None = None, fix_version: str | None = None) -> List[dict]:
-    """Return issues (key, summary, status) using provided JQL or a default built from fix_version."""
-    final_jql = _resolve_jql(jql, fix_version)
-    _jira_search(final_jql, max_results=1)  # validate
-    return _fetch_jira_issues(final_jql)
+    data, source = load_cache_or_call(key, ttl_hours=ttl_hours, fetch_fn=fetch, force_refresh=force_refresh)
+    return data.get("issues", [])

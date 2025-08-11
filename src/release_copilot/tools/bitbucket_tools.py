@@ -1,4 +1,3 @@
-import re
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -9,12 +8,7 @@ from tenacity import retry, wait_fixed, stop_after_attempt
 from release_copilot.config.settings import settings
 from release_copilot.kit.caching import cache_json
 from release_copilot.kit.errors import ApiError
-
-JIRA_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
-
-
-def extract_jira_keys(message: str) -> List[str]:
-    return JIRA_KEY_RE.findall(message)
+from release_copilot.kit.jira_key import extract_keys
 
 
 @tool
@@ -36,7 +30,7 @@ def _get_commits(project: str, repo: str, branch: str, since: Optional[str] = No
         raise ApiError(f"Bitbucket API error: {resp.status_code}")
     data = resp.json().get('values', [])
     for commit in data:
-        commit['jira_keys'] = extract_jira_keys(commit.get('message', ''))
+        commit['jira_keys'] = extract_keys(commit.get('message', ''))
     return data
 
 
@@ -84,7 +78,7 @@ def fetch_commits_window(
                 stop = True
                 break
             if since_ms <= ts <= until_ms:
-                commit["jira_keys"] = extract_jira_keys(commit.get("message", ""))
+                commit["jira_keys"] = extract_keys(commit.get("message", ""))
                 commit["message"] = (commit.get("message", "") or "")[:1000]
                 commits.append(commit)
 

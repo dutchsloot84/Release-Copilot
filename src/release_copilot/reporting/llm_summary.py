@@ -78,6 +78,8 @@ def build_context(
     branches_label: str,
     fix_version: Optional[str],
     top_n_per_repo: int = 15,
+    missing_preview: Optional[List[Dict[str, Any]]] = None,
+    orphan_preview: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     start_utc, end_utc = window
     repos_ctx = []
@@ -92,7 +94,7 @@ def build_context(
             "count": int(sr.get("count", 0) or 0),
             "highlights": highlights,
         })
-    return {
+    ctx = {
         "fix_version": fix_version or "",
         "window": {
             "start": start_utc.isoformat(),
@@ -101,6 +103,11 @@ def build_context(
         "branches": branches_label,
         "repos": repos_ctx,
     }
+    if missing_preview:
+        ctx["missing"] = missing_preview[:20]
+    if orphan_preview:
+        ctx["orphans"] = orphan_preview[:20]
+    return ctx
 
 def context_fingerprint(ctx: Dict[str, Any]) -> str:
     """Stable fingerprint for caching (order keys to make deterministic)."""
@@ -138,6 +145,11 @@ def _make_prompt(ctx: Dict[str, Any]) -> Tuple[str, str]:
         "- Don’t invent Jira details you don’t see.\n"
         "- Keep total length under ~700 words."
     )
+    if ctx.get("missing") or ctx.get("orphans"):
+        user += (
+            "5) Jira Gaps\n"
+            "   - Note issues missing in repos and commits without valid Jira keys.\n"
+        )
     return system, user
 
 def _openai_chat(model: str, system: str, user: str, max_tokens: int) -> str:
@@ -181,12 +193,23 @@ def build_llm_summary(
     top_n_per_repo: int = 15,
     base_name: str = "release_audit_llm",
     fix_version: Optional[str] = None,
+    missing_preview: Optional[List[Dict[str, Any]]] = None,
+    orphan_preview: Optional[List[Dict[str, Any]]] = None,
 ) -> Path:
     """
     Builds a compact context from CSVs, enforces budget, caches the LLM output, and writes a markdown narrative.
     Returns the markdown path.
     """
-    ctx = build_context(summary_rows, repo_csv_map, window, branches_label, fix_version, top_n_per_repo=top_n_per_repo)
+    ctx = build_context(
+        summary_rows,
+        repo_csv_map,
+        window,
+        branches_label,
+        fix_version,
+        top_n_per_repo=top_n_per_repo,
+        missing_preview=missing_preview,
+        orphan_preview=orphan_preview,
+    )
     # crude token estimate
     sys_prompt, user_prompt = _make_prompt(ctx)
     approx_tokens = estimate_tokens_from_chars(len(sys_prompt) + len(user_prompt)) + max_tokens

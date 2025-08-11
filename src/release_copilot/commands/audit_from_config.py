@@ -8,9 +8,12 @@ from typing import Dict, Iterable, List, Tuple
 
 from release_copilot.config.settings import settings  # noqa: F401 - ensure .env loading
 from release_copilot.kit.caching import CacheKey, load_cache_or_call
+from release_copilot.kit.jira_key import extract_keys
 from release_copilot.reporting.llm_summary import build_llm_summary
+from release_copilot.reporting.report_builder import build_reports
 from release_copilot.tools.bitbucket_tools import fetch_commits_window
 from release_copilot.tools.config_loader import ConfigData, load_config
+from release_copilot.tools.jira_tools import search_issues_cached
 
 
 def _parse_iso_date(value: str) -> datetime:
@@ -54,31 +57,68 @@ def _branch_loop(args, cfg: ConfigData) -> List[str]:
     return branches
 
 
-def _write_commits_csv(path: Path, commits: Iterable[dict]) -> None:
+def _write_commits_csv(path: Path, commits: Iterable[dict], project: str, repo: str, branch: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
+        "project",
+        "repo",
+        "branch",
         "id",
         "displayId",
         "author",
+        "authorEmail",
         "authorTimestamp",
         "message",
         "jira_keys",
+        "link",
     ]
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for c in commits:
+            author = c.get("author", {}) or {}
+            link = ""
+            links = (c.get("links") or {}).get("self")
+            if isinstance(links, list) and links:
+                link = links[0].get("href", "")
             writer.writerow(
                 {
+                    "project": project,
+                    "repo": repo,
+                    "branch": branch,
                     "id": c.get("id"),
                     "displayId": c.get("displayId"),
-                    "author": (c.get("author", {}) or {}).get("name"),
+                    "author": author.get("name"),
+                    "authorEmail": author.get("emailAddress"),
                     "authorTimestamp": c.get("authorTimestamp"),
                     "message": (c.get("message", "") or "")[:1000],
                     "jira_keys": ",".join(c.get("jira_keys", [])),
+                    "link": link,
                 }
             )
 
+
+def _write_csv(path: Path, fieldnames: List[str], rows: List[dict]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for r in rows:
+            writer.writerow({k: r.get(k, "") for k in fieldnames})
+    return path
+
+
+def resolve_jql(args) -> str:
+    if args.jql:
+        return args.jql.strip()
+    tmpl = (settings.DEFAULT_JQL or "").strip()
+    if not tmpl:
+        raise SystemExit("No JQL provided and DEFAULT_JQL is empty. Provide --jql or set DEFAULT_JQL in .env")
+    if "{fix_version}" in tmpl:
+        if not args.fix_version:
+            raise SystemExit("DEFAULT_JQL requires {fix_version}. Provide --fix-version.")
+        return tmpl.format(fix_version=args.fix_version)
+    return tmpl
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -93,12 +133,18 @@ def main() -> None:
     parser.add_argument("--cache-ttl-hours", type=int, default=12)
     parser.add_argument("--force-refresh", action="store_true")
     parser.add_argument("--output-dir", default="data/outputs")
+    parser.add_argument("--write-report", action="store_true", help="Write Markdown and Excel reports")
+    parser.add_argument("--report-name", type=str, default="release_audit", help="Base name for Markdown/Excel reports")
     parser.add_argument("--write-llm-summary", action="store_true", default=False, help="Generate optional LLM-written narrative")
     parser.add_argument("--llm-model", type=str, default="gpt-4o-mini", help="LLM model for narrative (default: gpt-4o-mini)")
     parser.add_argument("--llm-max-tokens", type=int, default=1200, help="Max tokens for LLM completion")
     parser.add_argument("--llm-budget-cents", type=int, default=10, help="Hard cap on estimated LLM spend (cents)")
     parser.add_argument("--llm-top-n", type=int, default=15, help="Highlights per repo to include in LLM context")
     parser.add_argument("--llm-report-name", type=str, default="release_audit_llm", help="Base name for LLM markdown")
+    parser.add_argument("--fix-version", type=str, default=None, help='Fix Version label or date (e.g. "Mobilitas 2025.08.22") for JQL substitution')
+    parser.add_argument("--jql", type=str, default=None, help="Custom JQL (overrides default)")
+    parser.add_argument("--jql-ttl-hours", type=int, default=12, help="Cache TTL for Jira search")
+    parser.add_argument("--jql-force-refresh", action="store_true", help="Bypass Jira cache")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -154,7 +200,7 @@ def main() -> None:
             branch_safe = branch.replace("/", "_")
             csv_name = f"commits_{project}_{repo}_{branch_safe}_{since_utc:%Y%m%d}_{until_utc:%Y%m%d}.csv"
             csv_path = output_dir / csv_name
-            _write_commits_csv(csv_path, commits)
+            _write_commits_csv(csv_path, commits, project, repo, branch)
             repo_csv_map[repo] = csv_path
 
             summary_rows.append(
@@ -190,8 +236,95 @@ def main() -> None:
 
     print(f"Summary written to {summary_path}")
 
+    # Jira comparison
+    missing_rows: List[dict] = []
+    orphan_commit_rows: List[dict] = []
+    try:
+        jql = resolve_jql(args)
+        jira_issues = search_issues_cached(jql, ttl_hours=args.jql_ttl_hours, force_refresh=args.jql_force_refresh)
+        jira_keys = {i["key"] for i in jira_issues}
+
+        commit_rows: List[dict] = []
+        for sr in summary_rows:
+            csv_path = Path(sr["csv_path"])
+            with csv_path.open("r", encoding="utf-8", newline="") as f:
+                reader = csv.DictReader(f)
+                for r in reader:
+                    msg = r.get("message", "")
+                    keys = extract_keys(msg)
+                    r["_extracted_keys"] = ";".join(keys)
+                    r["_keys_set"] = set(keys)
+                    commit_rows.append(r)
+
+        commit_keys = set().union(*(r["_keys_set"] for r in commit_rows)) if commit_rows else set()
+        missing_keys = sorted(list(jira_keys - commit_keys))
+        issue_by_key = {i["key"]: i for i in jira_issues}
+        for k in missing_keys:
+            i = issue_by_key.get(k, {})
+            missing_rows.append({
+                "key": k,
+                "summary": i.get("summary", ""),
+                "status": i.get("status", ""),
+                "assignee": i.get("assignee", ""),
+                "fixVersions": ", ".join(i.get("fixVersions", []) or []),
+                "updated": i.get("updated", ""),
+            })
+
+        orphan_commit_rows = [r for r in commit_rows if len(r["_keys_set"]) == 0 or not (r["_keys_set"] & jira_keys)]
+
+        missing_csv = output_dir / "missing_in_repo.csv"
+        orphan_csv = output_dir / "orphan_commits.csv"
+        _write_csv(missing_csv, ["key", "summary", "status", "assignee", "fixVersions", "updated"], missing_rows)
+        _write_csv(
+            orphan_csv,
+            [
+                "project",
+                "repo",
+                "branch",
+                "displayId",
+                "author",
+                "authorEmail",
+                "authorTimestamp",
+                "message",
+                "link",
+                "extracted_keys",
+            ],
+            [
+                {
+                    "project": r.get("project", ""),
+                    "repo": r.get("repo", ""),
+                    "branch": r.get("branch", ""),
+                    "displayId": r.get("displayId") or (r.get("id", "")[:10]),
+                    "author": r.get("author", ""),
+                    "authorEmail": r.get("authorEmail", ""),
+                    "authorTimestamp": r.get("authorTimestamp", ""),
+                    "message": r.get("message", ""),
+                    "link": r.get("link", ""),
+                    "extracted_keys": r.get("_extracted_keys", ""),
+                }
+                for r in orphan_commit_rows
+            ],
+        )
+        print(f"Missing-in-repo: {len(missing_rows)} | Orphan commits: {len(orphan_commit_rows)}")
+    except Exception as e:
+        print(f"Jira comparison skipped: {e}")
+        missing_rows = []
+        orphan_commit_rows = []
+
     branches_label = ", ".join(branches)
+    if args.write_report:
+        build_reports(summary_rows, output_dir, repo_csv_map, base_name=args.report_name)
+
     if args.write_llm_summary:
+        missing_preview = missing_rows[:20]
+        orphan_preview = [
+            {
+                "repo": r.get("repo", ""),
+                "displayId": r.get("displayId", ""),
+                "line": (r.get("message", "") or "").splitlines()[0][:160],
+            }
+            for r in orphan_commit_rows[:20]
+        ]
         try:
             llm_md = build_llm_summary(
                 summary_rows=summary_rows,
@@ -205,6 +338,8 @@ def main() -> None:
                 top_n_per_repo=args.llm_top_n,
                 base_name=args.llm_report_name,
                 fix_version=getattr(args, "fix_version", None) if hasattr(args, "fix_version") else None,
+                missing_preview=missing_preview,
+                orphan_preview=orphan_preview,
             )
             print(f"LLM summary written: {llm_md}")
         except Exception as e:

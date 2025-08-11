@@ -31,11 +31,16 @@ def run_wizard() -> None:
     jira_ok = _test_endpoint(f"{data['JIRA_BASE_URL']}/rest/api/2/myself", auth=(data['JIRA_EMAIL'], data['JIRA_API_TOKEN']))
     console.print(f"Jira connectivity: {'[green]✓[/green]' if jira_ok else '[red]✗[/red]'}")
 
-    data['BITBUCKET_BASE_URL'] = Prompt.ask('Bitbucket base URL (e.g. https://bitbucket.example.com)').rstrip('/')
+    data['BITBUCKET_BASE_URL'] = Prompt.ask(
+        'Bitbucket base URL (e.g. https://bitbucket.example.com/rest/api/1.0)'
+    ).rstrip('/')
     data['BITBUCKET_EMAIL'] = Prompt.ask('Bitbucket email')
     data['BITBUCKET_APP_PASSWORD'] = getpass('Bitbucket app password: ')
 
-    bb_ok = _test_endpoint(f"{data['BITBUCKET_BASE_URL']}/rest/api/1.0/projects", auth=(data['BITBUCKET_EMAIL'], data['BITBUCKET_APP_PASSWORD']))
+    bb_ok = _test_endpoint(
+        f"{data['BITBUCKET_BASE_URL'].rstrip('/')}/projects",
+        auth=(data['BITBUCKET_EMAIL'], data['BITBUCKET_APP_PASSWORD']),
+    )
     console.print(f"Bitbucket connectivity: {'[green]✓[/green]' if bb_ok else '[red]✗[/red]'}")
 
     enable_conf = Confirm.ask('Enable Confluence publishing?', default=False)

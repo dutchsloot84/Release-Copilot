@@ -26,7 +26,8 @@ def get_commits_by_branch(project: str, repo: str, branch: str, since: Optional[
 @cache_json('bitbucket', ttl_hours=12)
 @retry(wait_fixed(2), stop=stop_after_attempt(3))
 def _get_commits(project: str, repo: str, branch: str, since: Optional[str] = None) -> List[Dict]:
-    url = f"{settings.bitbucket_base_url}/rest/api/1.0/projects/{project}/repos/{repo}/commits"
+    base = settings.bitbucket_base_url.rstrip("/")
+    url = f"{base}/projects/{project}/repos/{repo}/commits"
     params = {'until': branch}
     if since:
         params['since'] = since
@@ -56,7 +57,8 @@ def fetch_commits_window(
         Inclusive UTC datetime window.
     """
 
-    url = f"{settings.bitbucket_base_url}/rest/api/1.0/projects/{project}/repos/{repo}/commits"
+    base = settings.bitbucket_base_url.rstrip("/")
+    url = f"{base}/projects/{project}/repos/{repo}/commits"
     start = 0
     commits: List[Dict] = []
     since_ms = int(since_utc.timestamp() * 1000)

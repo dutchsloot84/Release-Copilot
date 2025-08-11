@@ -40,7 +40,7 @@ set "FORCE_REFRESH=N"
 REM Offer last run
 if exist "data\.last_run.json" (
   echo.
-  set /p USE_LAST=Run with last settings? (Y/N) [N]:
+  set /p "USE_LAST=Run with last settings? (Y/N) [N]: "
   if /I "!USE_LAST!"=="Y" goto :RUN_LAST
 )
 
@@ -58,23 +58,23 @@ if not defined CONFIG (
 )
 
 echo.
-set /p BRANCH_MODE=Branch mode [release/develop/both] (default both): 
+set /p "BRANCH_MODE=Branch mode [release/develop/both] (default both): "
 if /I "%BRANCH_MODE%"=="" set "BRANCH_MODE=both"
 
 echo.
-set /p FIX_VERSION=Fix Version (optional, e.g., Mobilitas 2025.08.22): 
+set /p "FIX_VERSION=Fix Version (optional, e.g., Mobilitas 2025.08.22): "
 
 echo.
-set /p WRITE_LLM=Write LLM narrative? (Y/N) [N]: 
+set /p "WRITE_LLM=Write LLM narrative? (Y/N) [N]: "
 if /I "%WRITE_LLM%"=="Y" (
-  set /p LLM_MODEL=Model [gpt-4o-mini]: 
+  set /p "LLM_MODEL=Model [gpt-4o-mini]: "
   if "%LLM_MODEL%"=="" set "LLM_MODEL=gpt-4o-mini"
-  set /p LLM_BUDGET=Budget (cents) [8]: 
+  set /p "LLM_BUDGET=Budget (cents) [8]: "
   if "%LLM_BUDGET%"=="" set "LLM_BUDGET=8"
 )
 
 echo.
-set /p FORCE_REFRESH=Force refresh caches? (Y/N) [N]: 
+set /p "FORCE_REFRESH=Force refresh caches? (Y/N) [N]: "
 
 echo.
 echo --- Summary ---

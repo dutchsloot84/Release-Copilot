@@ -86,13 +86,13 @@ echo Force refresh: %FORCE_REFRESH%
 echo.
 
 REM Build args via Python helper
-python -c "from scripts._common_args import build_args, save_last; import os, json; config=r'%CONFIG%'; release_only=os.environ.get('BRANCH_MODE','both').lower()=='release'; develop_only=os.environ.get('BRANCH_MODE','both').lower()=='develop'; fix_version=os.environ.get('FIX_VERSION') or None; write_llm=(os.environ.get('WRITE_LLM','N').upper()=='Y'); llm_model=os.environ.get('LLM_MODEL','gpt-4o-mini'); llm_budget=int(os.environ.get('LLM_BUDGET','8') or '8'); force_refresh=(os.environ.get('FORCE_REFRESH','N').upper()=='Y'); args=build_args(config_path=config, release_only=release_only, develop_only=develop_only, fix_version=fix_version, write_llm=write_llm, llm_model=llm_model, llm_budget_cents=llm_budget, force_refresh=force_refresh); save_last(args); print(' '.join(args))" >"%TEMP%\rc_args.txt"
+python -c "from scripts._common_args import build_args, save_last; import os, subprocess; config=r'%CONFIG%'; release_only=os.environ.get('BRANCH_MODE','both').lower()=='release'; develop_only=os.environ.get('BRANCH_MODE','both').lower()=='develop'; fix_version=os.environ.get('FIX_VERSION') or None; write_llm=(os.environ.get('WRITE_LLM','N').upper()=='Y'); llm_model=os.environ.get('LLM_MODEL','gpt-4o-mini'); llm_budget=int(os.environ.get('LLM_BUDGET','8') or '8'); force_refresh=(os.environ.get('FORCE_REFRESH','N').upper()=='Y'); args=build_args(config_path=config, release_only=release_only, develop_only=develop_only, fix_version=fix_version, write_llm=write_llm, llm_model=llm_model, llm_budget_cents=llm_budget, force_refresh=force_refresh); save_last(args); print(subprocess.list2cmdline(args))" >"%TEMP%\rc_args.txt"
 
 set /p RUNLINE=<"%TEMP%\rc_args.txt"
 goto :RUN_BUILT
 
 :RUN_LAST
-python -c "from scripts._common_args import load_last; import sys; print(' '.join(load_last() or []))" >"%TEMP%\rc_args.txt"
+python -c "from scripts._common_args import load_last; import subprocess; print(subprocess.list2cmdline(load_last() or []))" >"%TEMP%\rc_args.txt"
 set /p RUNLINE=<"%TEMP%\rc_args.txt"
 goto :RUN_BUILT
 

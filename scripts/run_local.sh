@@ -30,13 +30,14 @@ else
     if [[ "${USE_LAST:-N}" =~ ^[Yy]$ ]]; then
       RUNLINE=$(python - <<'PY'
 from scripts._common_args import load_last
+import shlex
 args = load_last() or []
-print(" ".join(args))
+print(shlex.join(args))
 PY
 )
       echo
       echo "Running: python $RUNLINE"
-      python $RUNLINE
+      eval "python $RUNLINE"
       EC=$?
       goto_end=true
     fi
@@ -100,12 +101,12 @@ args = build_args(
     force_refresh=force_refresh,
 )
 save_last(args)
-print(" ".join(args))
+print(shlex.join(args))
 PY
 )
     echo
     echo "Running: python $RUNLINE"
-    python $RUNLINE
+    eval "python $RUNLINE"
     EC=$?
   fi
 fi

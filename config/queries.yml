@@ -1,0 +1,7 @@
+queries:
+  mobilitas_standard: >
+    fixVersion = "{fix_version}" AND issuetype not in
+    ("Sub-task","Tech Story","Epic","Test Execution","Dev Task","QA Task","Shoulder Check","Automation","Test Plan","Spike","Test")
+  bugs_open_only: >
+    project = MOBI AND fixVersion = "{fix_version}" AND issuetype = Bug
+    AND statusCategory != Done ORDER BY priority DESC

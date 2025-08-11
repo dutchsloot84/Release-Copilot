@@ -1,0 +1,15 @@
+crewai
+langgraph
+langchain
+llama-index
+python-dotenv
+requests
+openpyxl
+rich
+tqdm
+pydantic
+pydantic-settings
+tenacity
+pyyaml
+pytest
+streamlit>=1.35

@@ -148,3 +148,22 @@ python -m release_copilot.commands.audit_from_config \
   --develop-only \
   --develop-branch develop
 ```
+
+### Optional LLM Narrative (Hybrid Mode)
+
+By default, the audit writes CSV/Markdown/Excel for **$0**.
+
+Enable an **LLM-written narrative** only when you want it:
+
+```bash
+python -m release_copilot.commands.audit_from_config \
+  --config config/release_audit_config.json \
+  --release-only \
+  --write-llm-summary --llm-model gpt-4o-mini --llm-budget-cents 8
+```
+
+Cost controls:
+
+- Sends only compact highlights (top N lines per repo), not full logs.
+- Enforces a hard budget (`--llm-budget-cents`), otherwise skips.
+- Caches output by fingerprint — reruns are free unless highlights change.

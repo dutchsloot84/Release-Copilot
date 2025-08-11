@@ -4,10 +4,11 @@ import argparse
 import csv
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple
 
 from release_copilot.config.settings import settings  # noqa: F401 - ensure .env loading
 from release_copilot.kit.caching import CacheKey, load_cache_or_call
+from release_copilot.reporting.llm_summary import build_llm_summary
 from release_copilot.tools.bitbucket_tools import fetch_commits_window
 from release_copilot.tools.config_loader import ConfigData, load_config
 
@@ -92,19 +93,24 @@ def main() -> None:
     parser.add_argument("--cache-ttl-hours", type=int, default=12)
     parser.add_argument("--force-refresh", action="store_true")
     parser.add_argument("--output-dir", default="data/outputs")
-    parser.add_argument("--no-llm", action="store_true")
+    parser.add_argument("--write-llm-summary", action="store_true", default=False, help="Generate optional LLM-written narrative")
+    parser.add_argument("--llm-model", type=str, default="gpt-4o-mini", help="LLM model for narrative (default: gpt-4o-mini)")
+    parser.add_argument("--llm-max-tokens", type=int, default=1200, help="Max tokens for LLM completion")
+    parser.add_argument("--llm-budget-cents", type=int, default=10, help="Hard cap on estimated LLM spend (cents)")
+    parser.add_argument("--llm-top-n", type=int, default=15, help="Highlights per repo to include in LLM context")
+    parser.add_argument("--llm-report-name", type=str, default="release_audit_llm", help="Base name for LLM markdown")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
 
-    since, until = (
+    since_utc, until_utc = (
         (_parse_iso_date(args.since), _parse_iso_date(args.until))
         if args.since and args.until
         else _default_window()
     )
 
     branches = _branch_loop(args, cfg)
-    print(f"Commit window: {since.isoformat()} to {until.isoformat()}")
+    print(f"Commit window: {since_utc.isoformat()} to {until_utc.isoformat()}")
 
     repo_pairs = []
     for key in cfg.repos:
@@ -115,7 +121,8 @@ def main() -> None:
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    summary_rows = []
+    summary_rows: List[dict] = []
+    repo_csv_map: Dict[str, Path] = {}
 
     for project, repo in repo_pairs:
         for branch in branches:
@@ -126,14 +133,14 @@ def main() -> None:
                         "project": project,
                         "repo": repo,
                         "branch": branch,
-                        "since": since.isoformat(),
-                        "until": until.isoformat(),
+                        "since": since_utc.isoformat(),
+                        "until": until_utc.isoformat(),
                     },
                 )
             )
 
             def fetch() -> List[dict]:
-                return fetch_commits_window(project, repo, branch, since, until)
+                return fetch_commits_window(project, repo, branch, since_utc, until_utc)
 
             commits, source = load_cache_or_call(
                 key,
@@ -145,9 +152,10 @@ def main() -> None:
             print(f"{project}/{repo} {branch}: {source} ({len(commits)} commits)")
 
             branch_safe = branch.replace("/", "_")
-            csv_name = f"commits_{project}_{repo}_{branch_safe}_{since:%Y%m%d}_{until:%Y%m%d}.csv"
+            csv_name = f"commits_{project}_{repo}_{branch_safe}_{since_utc:%Y%m%d}_{until_utc:%Y%m%d}.csv"
             csv_path = output_dir / csv_name
             _write_commits_csv(csv_path, commits)
+            repo_csv_map[repo] = csv_path
 
             summary_rows.append(
                 {
@@ -155,8 +163,8 @@ def main() -> None:
                     "repo": repo,
                     "branch": branch,
                     "count": len(commits),
-                    "since_iso": since.isoformat(),
-                    "until_iso": until.isoformat(),
+                    "since_iso": since_utc.isoformat(),
+                    "until_iso": until_utc.isoformat(),
                     "csv_path": str(csv_path),
                     "source": source,
                 }
@@ -182,10 +190,27 @@ def main() -> None:
 
     print(f"Summary written to {summary_path}")
 
-    if args.no_llm:
-        print("LLM summary skipped (--no-llm)")
+    branches_label = ", ".join(branches)
+    if args.write_llm_summary:
+        try:
+            llm_md = build_llm_summary(
+                summary_rows=summary_rows,
+                output_dir=output_dir,
+                window=(since_utc, until_utc),
+                branches_label=branches_label,
+                repo_csv_map=repo_csv_map,
+                model=args.llm_model,
+                max_tokens=args.llm_max_tokens,
+                budget_cents=args.llm_budget_cents,
+                top_n_per_repo=args.llm_top_n,
+                base_name=args.llm_report_name,
+                fix_version=getattr(args, "fix_version", None) if hasattr(args, "fix_version") else None,
+            )
+            print(f"LLM summary written: {llm_md}")
+        except Exception as e:
+            print(f"LLM summary skipped: {e}")
     else:
-        print("LLM summary not implemented in this prototype")
+        print("LLM summary not requested (use --write-llm-summary to enable).")
 
 
 if __name__ == "__main__":

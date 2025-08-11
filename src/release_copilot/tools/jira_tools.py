@@ -6,6 +6,8 @@ from release_copilot.config.settings import Settings
 
 settings = Settings()
 JIRA = (settings.jira_base_url or "").rstrip("/")
+if JIRA.lower().endswith("/browse"):
+    JIRA = JIRA[: -len("/browse")]
 AUTH = (settings.jira_email, settings.jira_api_token)
 
 _FIELDS = "key,summary,status,issuetype,assignee,fixVersions,updated"

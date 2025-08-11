@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
-from release_copilot.config.settings import settings  # noqa: F401 - ensure .env loading
+from release_copilot.config.settings import settings
 from release_copilot.kit.caching import CacheKey, load_cache_or_call
 from release_copilot.kit.jira_key import extract_keys
 from release_copilot.reporting.llm_summary import build_llm_summary
@@ -111,7 +111,7 @@ def _write_csv(path: Path, fieldnames: List[str], rows: List[dict]) -> Path:
 def resolve_jql(args) -> str:
     if args.jql:
         return args.jql.strip()
-    tmpl = (settings.DEFAULT_JQL or "").strip()
+    tmpl = (settings.default_jql or "").strip()
     if not tmpl:
         raise SystemExit("No JQL provided and DEFAULT_JQL is empty. Provide --jql or set DEFAULT_JQL in .env")
     if "{fix_version}" in tmpl:

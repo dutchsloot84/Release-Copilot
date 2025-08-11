@@ -158,8 +158,8 @@ def _openai_chat(model: str, system: str, user: str, max_tokens: int) -> str:
         from openai import OpenAI
     except Exception as e:
         raise RuntimeError("openai package is not installed; cannot write LLM summary.") from e
-    settings = Settings()  # loads API key from .env via pydantic-settings
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    cfg = Settings()  # loads API key from .env via pydantic-settings
+    client = OpenAI(api_key=cfg.openai_api_key)
     resp = client.chat.completions.create(
         model=model,
         messages=[

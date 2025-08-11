@@ -21,11 +21,14 @@ if [ $# -gt 0 ]; then
   EC=$?
 else
   # Interactive guided run
-  last_json="data/.last_run.json"
-  has_last="false"
-  if [ -f "$last_json" ]; then has_last="true"; fi
+  has_last=$(python - <<'PY'
+from scripts._common_args import load_last
+import sys
+sys.stdout.write('1' if load_last() else '0')
+PY
+)
 
-  if [ "$has_last" = "true" ]; then
+  if [ "$has_last" = "1" ]; then
     read -r -p "Run with last settings? (y/N) " USE_LAST
     if [[ "${USE_LAST:-N}" =~ ^[Yy]$ ]]; then
       RUNLINE=$(python - <<'PY'

@@ -38,7 +38,8 @@ set "LLM_BUDGET=8"
 set "FORCE_REFRESH=N"
 
 REM Offer last run
-if exist "data\.last_run.json" (
+for /f "usebackq tokens=*" %%A in (`python -c "from scripts._common_args import load_last; import sys; sys.stdout.write('1' if load_last() else '0')"`) do set HAS_LAST=%%A
+if "%HAS_LAST%"=="1" (
   echo.
   set /p "USE_LAST=Run with last settings? (Y/N) [N]: "
   if /I "!USE_LAST!"=="Y" goto :RUN_LAST

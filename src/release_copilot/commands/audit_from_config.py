@@ -23,25 +23,33 @@ def _default_window() -> Tuple[datetime, datetime]:
 
 
 def _branch_loop(args, cfg: ConfigData) -> List[str]:
+    """Resolve branches based on config and CLI flags, logging decisions."""
+
     develop_branch = args.develop_branch or cfg.develop_branch
     release_branch = args.release_branch or cfg.release_branch
 
     branches: List[str] = []
-    if args.develop_only and args.release_only:
-        raise SystemExit("--develop-only and --release-only are mutually exclusive")
     if args.develop_only:
         if not develop_branch:
             raise SystemExit("Develop branch not defined")
-        branches = [develop_branch]
+        print("Flag --develop-only: release branch skipped")
+        branches.append(develop_branch)
     elif args.release_only:
         if not release_branch:
             raise SystemExit("Release branch not defined")
-        branches = [release_branch]
+        print("Flag --release-only: develop branch skipped")
+        branches.append(release_branch)
     else:
         if release_branch:
             branches.append(release_branch)
+        else:
+            print("Release branch not defined; skipping")
         if develop_branch:
             branches.append(develop_branch)
+        else:
+            print("Develop branch not defined; skipping")
+
+    print(f"Branches resolved: {', '.join(branches)}")
     return branches
 
 
@@ -96,7 +104,7 @@ def main() -> None:
     )
 
     branches = _branch_loop(args, cfg)
-    print(f"Branches resolved: {', '.join(branches)}")
+    print(f"Commit window: {since.isoformat()} to {until.isoformat()}")
 
     repo_pairs = []
     for key in cfg.repos:
@@ -118,8 +126,8 @@ def main() -> None:
                         "project": project,
                         "repo": repo,
                         "branch": branch,
-                        "since": since.date().isoformat(),
-                        "until": until.date().isoformat(),
+                        "since": since.isoformat(),
+                        "until": until.isoformat(),
                     },
                 )
             )
@@ -147,8 +155,8 @@ def main() -> None:
                     "repo": repo,
                     "branch": branch,
                     "count": len(commits),
-                    "since_iso": since.date().isoformat(),
-                    "until_iso": until.date().isoformat(),
+                    "since_iso": since.isoformat(),
+                    "until_iso": until.isoformat(),
                     "csv_path": str(csv_path),
                     "source": source,
                 }

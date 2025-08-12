@@ -9,6 +9,7 @@ from datetime import datetime
 
 from release_copilot.kit.caching import load_cache_or_call  # existing helper
 from release_copilot.config.settings import Settings  # loads .env (no OS env reads)
+from release_copilot.kit.cost_meter import CostSession
 
 # ------------------ CSV utilities ------------------
 
@@ -152,7 +153,7 @@ def _make_prompt(ctx: Dict[str, Any]) -> Tuple[str, str]:
         )
     return system, user
 
-def _openai_chat(model: str, system: str, user: str, max_tokens: int) -> str:
+def _openai_chat(model: str, system: str, user: str, max_tokens: int) -> Tuple[str, Any]:
     # Optional dependency – keep failure graceful.
     try:
         from openai import OpenAI
@@ -169,7 +170,7 @@ def _openai_chat(model: str, system: str, user: str, max_tokens: int) -> str:
         temperature=0.2,
         max_tokens=max_tokens,
     )
-    return resp.choices[0].message.content or ""
+    return resp.choices[0].message.content or "", resp.usage
 
 # ------------------ Cache + writer ------------------
 
@@ -195,6 +196,7 @@ def build_llm_summary(
     fix_version: Optional[str] = None,
     missing_preview: Optional[List[Dict[str, Any]]] = None,
     orphan_preview: Optional[List[Dict[str, Any]]] = None,
+    cost_session: Optional["CostSession"] = None,
 ) -> Path:
     """
     Builds a compact context from CSVs, enforces budget, caches the LLM output, and writes a markdown narrative.
@@ -234,8 +236,12 @@ def build_llm_summary(
     key = _cache_key(model, fp)
 
     def _fetch() -> Dict[str, Any]:
-        text = _openai_chat(model=model, system=sys_prompt, user=user_prompt, max_tokens=max_tokens)
-        return {"text": text}
+        text, usage = _openai_chat(model=model, system=sys_prompt, user=user_prompt, max_tokens=max_tokens)
+        return {
+            "text": text,
+            "prompt_tokens": int(getattr(usage, "prompt_tokens", 0)),
+            "completion_tokens": int(getattr(usage, "completion_tokens", 0)),
+        }
 
     data, source = load_cache_or_call(
         key=key,
@@ -247,4 +253,13 @@ def build_llm_summary(
     text = data.get("text", "").strip()
     if not text:
         raise RuntimeError("LLM returned empty summary.")
+
+    if source == "api" and cost_session is not None:
+        cost_session.record(
+            "llm_summary",
+            int(data.get("prompt_tokens", 0)),
+            int(data.get("completion_tokens", 0)),
+            model,
+        )
+
     return write_markdown(text, output_dir, base_name=base_name)

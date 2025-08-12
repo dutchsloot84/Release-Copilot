@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -15,6 +16,7 @@ from release_copilot.reporting.report_builder import build_reports
 from release_copilot.tools.bitbucket_tools import fetch_commits_window
 from release_copilot.tools.config_loader import ConfigData, load_config
 from release_copilot.tools.jira_tools import search_issues_cached, validate_jql_or_raise
+from release_copilot.kit.cost_meter import CostSession
 
 logger = logging.getLogger(__name__)
 
@@ -225,51 +227,59 @@ def main() -> None:
     summary_rows: List[dict] = []
     repo_csv_map: Dict[str, Path] = {}
 
-    for project, repo in repo_pairs:
-        for branch in branches:
-            key = str(
-                CacheKey(
-                    "bb:commits",
-                    {
-                        "project": project,
-                        "repo": repo,
-                        "branch": branch,
-                        "since": since_utc.isoformat(),
-                        "until": until_utc.isoformat(),
-                    },
-                )
-            )
-
-            def fetch() -> List[dict]:
-                return fetch_commits_window(project, repo, branch, since_utc, until_utc)
-
-            commits, source = load_cache_or_call(
-                key,
-                ttl_hours=args.cache_ttl_hours,
-                fetch_fn=fetch,
-                force_refresh=args.force_refresh,
-            )
-
-            print(f"{project}/{repo} {branch}: {source} ({len(commits)} commits)")
-
-            branch_safe = branch.replace("/", "_")
-            csv_name = f"commits_{project}_{repo}_{branch_safe}_{since_utc:%Y%m%d}_{until_utc:%Y%m%d}.csv"
-            csv_path = output_dir / csv_name
-            _write_commits_csv(csv_path, commits, project, repo, branch)
-            repo_csv_map[repo] = csv_path
-
-            summary_rows.append(
+    def _fetch_and_write(project: str, repo: str, branch: str):
+        key = str(
+            CacheKey(
+                "bb:commits",
                 {
                     "project": project,
                     "repo": repo,
                     "branch": branch,
-                    "count": len(commits),
-                    "since_iso": since_utc.isoformat(),
-                    "until_iso": until_utc.isoformat(),
-                    "csv_path": str(csv_path),
-                    "source": source,
-                }
+                    "since": since_utc.isoformat(),
+                    "until": until_utc.isoformat(),
+                },
             )
+        )
+
+        def fetch() -> List[dict]:
+            return fetch_commits_window(project, repo, branch, since_utc, until_utc)
+
+        commits, source = load_cache_or_call(
+            key,
+            ttl_hours=args.cache_ttl_hours,
+            fetch_fn=fetch,
+            force_refresh=args.force_refresh,
+        )
+
+        print(f"{project}/{repo} {branch}: {source} ({len(commits)} commits)")
+
+        branch_safe = branch.replace("/", "_")
+        csv_name = f"commits_{project}_{repo}_{branch_safe}_{since_utc:%Y%m%d}_{until_utc:%Y%m%d}.csv"
+        csv_path = output_dir / csv_name
+        _write_commits_csv(csv_path, commits, project, repo, branch)
+
+        summary = {
+            "project": project,
+            "repo": repo,
+            "branch": branch,
+            "count": len(commits),
+            "since_iso": since_utc.isoformat(),
+            "until_iso": until_utc.isoformat(),
+            "csv_path": str(csv_path),
+            "source": source,
+        }
+        return summary, repo, csv_path
+
+    with ThreadPoolExecutor() as executor:
+        futures = [
+            executor.submit(_fetch_and_write, project, repo, branch)
+            for project, repo in repo_pairs
+            for branch in branches
+        ]
+        for fut in as_completed(futures):
+            summary, repo, csv_path = fut.result()
+            summary_rows.append(summary)
+            repo_csv_map[repo] = csv_path
 
     summary_path = output_dir / "summary.csv"
     with summary_path.open("w", newline="", encoding="utf-8") as f:
@@ -383,21 +393,23 @@ def main() -> None:
             for r in orphan_commit_rows[:20]
         ]
         try:
-            llm_md = build_llm_summary(
-                summary_rows=summary_rows,
-                output_dir=output_dir,
-                window=(since_utc, until_utc),
-                branches_label=branches_label,
-                repo_csv_map=repo_csv_map,
-                model=args.llm_model,
-                max_tokens=args.llm_max_tokens,
-                budget_cents=args.llm_budget_cents,
-                top_n_per_repo=args.llm_top_n,
-                base_name=args.llm_report_name,
-                fix_version=_clean_fix_version(getattr(args, "fix_version", None)) if hasattr(args, "fix_version") else None,
-                missing_preview=missing_preview,
-                orphan_preview=orphan_preview,
-            )
+            with CostSession() as cost:
+                llm_md = build_llm_summary(
+                    summary_rows=summary_rows,
+                    output_dir=output_dir,
+                    window=(since_utc, until_utc),
+                    branches_label=branches_label,
+                    repo_csv_map=repo_csv_map,
+                    model=args.llm_model,
+                    max_tokens=args.llm_max_tokens,
+                    budget_cents=args.llm_budget_cents,
+                    top_n_per_repo=args.llm_top_n,
+                    base_name=args.llm_report_name,
+                    fix_version=_clean_fix_version(getattr(args, "fix_version", None)) if hasattr(args, "fix_version") else None,
+                    missing_preview=missing_preview,
+                    orphan_preview=orphan_preview,
+                    cost_session=cost,
+                )
             print(f"LLM summary written: {llm_md}")
         except Exception as e:
             print(f"LLM summary skipped: {e}")

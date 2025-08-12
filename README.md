@@ -200,3 +200,9 @@ python -m release_copilot.commands.audit_from_config \
   --fix-version "Mobilitas 2025.08.22" \
   --jql-ttl-hours 12
 ```
+
+**Tip:** You can enter Fix Version with or without quotes. We automatically trim outer quotes/whitespace.
+Example inputs that all work:
+- Mobilitas 2025.08.22
+- "Mobilitas 2025.08.22"
+- 'Mobilitas 2025.08.22'

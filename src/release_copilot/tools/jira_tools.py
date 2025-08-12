@@ -14,6 +14,27 @@ _FIELDS = "key,summary,status,issuetype,assignee,fixVersions,updated"
 _MAX_RESULTS = 100
 
 
+def validate_jql_or_raise(jql: str) -> None:
+    """
+    Fail fast for malformed JQL with a minimal search.
+    Raises requests.HTTPError with the JQL included if status >= 400.
+    """
+    url = f"{JIRA}/rest/api/2/search"
+    params = {"jql": jql, "startAt": 0, "maxResults": 0, "fields": "key"}
+    r = requests.get(url, params=params, auth=AUTH, timeout=20)
+    try:
+        r.raise_for_status()
+    except requests.HTTPError as e:
+        snippet = (jql or "")[:500].replace("\n", " ")
+        try:
+            details = r.text[:500]
+        except Exception:
+            details = ""
+        raise requests.HTTPError(
+            f"JQL validation failed ({r.status_code}). JQL: {snippet}  Details: {details}"
+        ) from e
+
+
 def _search_once(jql: str, start_at: int = 0, max_results: int = _MAX_RESULTS) -> Dict[str, Any]:
     url = f"{JIRA}/rest/api/2/search"
     params = {"jql": jql, "startAt": start_at, "maxResults": max_results, "fields": _FIELDS}

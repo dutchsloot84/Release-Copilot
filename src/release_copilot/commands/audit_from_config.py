@@ -3,8 +3,9 @@ from __future__ import annotations
 import argparse
 import csv
 from datetime import datetime, timedelta, timezone
+import logging
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from release_copilot.config.settings import settings
 from release_copilot.kit.caching import CacheKey, load_cache_or_call
@@ -13,7 +14,9 @@ from release_copilot.reporting.llm_summary import build_llm_summary
 from release_copilot.reporting.report_builder import build_reports
 from release_copilot.tools.bitbucket_tools import fetch_commits_window
 from release_copilot.tools.config_loader import ConfigData, load_config
-from release_copilot.tools.jira_tools import search_issues_cached
+from release_copilot.tools.jira_tools import search_issues_cached, validate_jql_or_raise
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_iso_date(value: str) -> datetime:
@@ -108,16 +111,41 @@ def _write_csv(path: Path, fieldnames: List[str], rows: List[dict]) -> Path:
     return path
 
 
-def resolve_jql(args) -> str:
-    if args.jql:
+def _clean_fix_version(raw: Optional[str]) -> Optional[str]:
+    """
+    Clean user-supplied Fix Version safely:
+    - Trim outer whitespace
+    - Remove wrapping single/double quotes if present
+    - Keep internal spacing exactly as typed
+    """
+    if not raw:
+        return None
+    v = raw.strip()
+    if len(v) >= 2 and ((v[0] == v[-1] == '"') or (v[0] == v[-1] == "'")):
+        v = v[1:-1].strip()
+    return v
+
+
+def resolve_jql(args, settings) -> str:
+    """
+    Resolve the final JQL string:
+    - If --jql is provided, return it trimmed.
+    - Else use settings.DEFAULT_JQL verbatim (no edits), substituting {fix_version} if present.
+    - If template needs {fix_version} but it's missing, exit with a clear message.
+    """
+    if getattr(args, "jql", None):
         return args.jql.strip()
-    tmpl = (settings.default_jql or "").strip()
+
+    tmpl = settings.default_jql  # DO NOT modify/strip
     if not tmpl:
         raise SystemExit("No JQL provided and DEFAULT_JQL is empty. Provide --jql or set DEFAULT_JQL in .env")
+
     if "{fix_version}" in tmpl:
-        if not args.fix_version:
+        fv = _clean_fix_version(getattr(args, "fix_version", None))
+        if not fv:
             raise SystemExit("DEFAULT_JQL requires {fix_version}. Provide --fix-version.")
-        return tmpl.format(fix_version=args.fix_version)
+        return tmpl.format(fix_version=fv)
+
     return tmpl
 
 def main() -> None:
@@ -240,7 +268,9 @@ def main() -> None:
     missing_rows: List[dict] = []
     orphan_commit_rows: List[dict] = []
     try:
-        jql = resolve_jql(args)
+        jql = resolve_jql(args, settings)
+        logger.info("Resolved JQL: %s", jql)
+        validate_jql_or_raise(jql)
         jira_issues = search_issues_cached(jql, ttl_hours=args.jql_ttl_hours, force_refresh=args.jql_force_refresh)
         jira_keys = {i["key"] for i in jira_issues}
 
@@ -307,7 +337,7 @@ def main() -> None:
         )
         print(f"Missing-in-repo: {len(missing_rows)} | Orphan commits: {len(orphan_commit_rows)}")
     except Exception as e:
-        print(f"Jira comparison skipped: {e}")
+        logger.warning("Jira comparison skipped: %s", e)
         missing_rows = []
         orphan_commit_rows = []
 
@@ -337,7 +367,7 @@ def main() -> None:
                 budget_cents=args.llm_budget_cents,
                 top_n_per_repo=args.llm_top_n,
                 base_name=args.llm_report_name,
-                fix_version=getattr(args, "fix_version", None) if hasattr(args, "fix_version") else None,
+                fix_version=_clean_fix_version(getattr(args, "fix_version", None)) if hasattr(args, "fix_version") else None,
                 missing_preview=missing_preview,
                 orphan_preview=orphan_preview,
             )

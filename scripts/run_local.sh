@@ -20,6 +20,24 @@ if [ $# -gt 0 ]; then
   python -m release_copilot.commands.audit_from_config "$@"
   EC=$?
 else
+  echo
+  echo "[1] Guided run"
+  echo "[2] Connectivity only (Jira & Bitbucket checks)"
+  read -r -p "Choose an option [1]: " MENU
+  MENU=${MENU:-1}
+  if [ "$MENU" = "2" ]; then
+    echo
+    echo "Running connectivity check..."
+    python -m release_copilot.commands.audit_from_config --connectivity-only
+    EC=$?
+    if [ $EC -eq 0 ]; then
+      echo "Connectivity: OK"
+    else
+      echo "Connectivity: FAILED (exit $EC)"
+    fi
+    exit $EC
+  fi
+
   # Interactive guided run
   has_last=$(python - <<'PY'
 from scripts._common_args import load_last

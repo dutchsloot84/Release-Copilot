@@ -26,6 +26,12 @@ if not exist ".env" (
 REM If args were provided, bypass interactive flow
 if not "%~1"=="" goto :RUN_WITH_ARGS
 
+echo.
+echo [1] Guided run
+echo [2] Connectivity only (Jira & Bitbucket checks)
+set /p MENU=Choose an option [1]: 
+if "%MENU%"=="2" goto :CONNECTIVITY_ONLY
+
 REM --- Interactive guided run ---
 set "CHOICE="
 set "USE_LAST=N"
@@ -100,6 +106,20 @@ goto :RUN_BUILT
 python -c "from scripts._common_args import load_last; import subprocess; print(subprocess.list2cmdline(load_last() or []))" >"%TEMP%\rc_args.txt"
 set /p RUNLINE=<"%TEMP%\rc_args.txt"
 goto :RUN_BUILT
+
+:CONNECTIVITY_ONLY
+echo.
+echo Running connectivity check...
+python -m release_copilot.commands.audit_from_config --connectivity-only
+set EXITCODE=%ERRORLEVEL%
+if %EXITCODE% EQU 0 (
+  echo Connectivity: OK
+) else (
+  echo Connectivity: FAILED (exit %EXITCODE%)
+)
+echo.
+pause
+endlocal & exit /b %EXITCODE%
 
 :RUN_WITH_ARGS
 set RUNLINE=-m release_copilot.commands.audit_from_config %*

@@ -150,7 +150,7 @@ def resolve_jql(args, settings) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", required=True)
+    parser.add_argument("--config")
     parser.add_argument("--develop-branch")
     parser.add_argument("--release-branch")
     group = parser.add_mutually_exclusive_group()
@@ -173,7 +173,29 @@ def main() -> None:
     parser.add_argument("--jql", type=str, default=None, help="Custom JQL (overrides default)")
     parser.add_argument("--jql-ttl-hours", type=int, default=12, help="Cache TTL for Jira search")
     parser.add_argument("--jql-force-refresh", action="store_true", help="Bypass Jira cache")
+    parser.add_argument("--connectivity-only", action="store_true", help="Check Jira/Bitbucket connectivity and exit")
     args = parser.parse_args()
+
+    if not args.connectivity_only and not args.config:
+        parser.error("--config is required unless --connectivity-only")
+
+    if args.connectivity_only:
+        from release_copilot.tools.bitbucket_ping import bitbucket_ping
+        from release_copilot.tools.jira_tools import _self_test as jira_self_test
+
+        project_key = settings.bitbucket_project
+        if project_key:
+            bb_ok, bb_msg = bitbucket_ping(project_key)
+        else:
+            bb_ok, bb_msg = False, "BITBUCKET_PROJECT not configured"
+
+        j_ec = jira_self_test()
+        jira_ok = (j_ec == 0)
+
+        print("\n== Connectivity Check ==")
+        print(f"Bitbucket: {'OK' if bb_ok else 'FAIL'} — {bb_msg}")
+        print(f"Jira: {'OK' if jira_ok else 'FAIL'}")
+        raise SystemExit(0 if (bb_ok and jira_ok) else 1)
 
     cfg = load_config(args.config)
 

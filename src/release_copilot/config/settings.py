@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     bitbucket_base_url: str = Field('', env='BITBUCKET_BASE_URL')
     bitbucket_email: str = Field('', env='BITBUCKET_EMAIL')
     bitbucket_app_password: str = Field('', env='BITBUCKET_APP_PASSWORD')
+    bitbucket_project: str = Field('', env='BITBUCKET_PROJECT')
 
     # Confluence
     confluence_enabled: bool = Field(False, env='CONFLUENCE_ENABLED')

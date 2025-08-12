@@ -71,6 +71,29 @@ Double-click `scripts/run_local.bat` (Windows) or run `./scripts/run_local.sh` (
 
 The script remembers your **last run** in `data/.last_run.json` so you can repeat with one keystroke. On success it opens `data/outputs/` automatically.
 
+### Connectivity only
+
+Quickly verify credentials and network access without running a full audit:
+
+```bash
+python -m release_copilot.commands.audit_from_config --connectivity-only
+```
+
+The check verifies:
+
+- Bitbucket access (lists repos for `BITBUCKET_PROJECT`)
+- Jira OAuth access (`--self-test` on v3 API with token auto-refresh)
+
+Token file location:
+Set `JIRA_TOKEN_FILE=secrets/jira_oauth.json` in `.env`. The file stores:
+
+- `refresh_token` (required)
+- `access_token` (refreshed automatically)
+- `expires_at` (epoch seconds)
+- `cloudid` (discovered and cached)
+
+Keep `secrets/` and `.env` out of git. The OAuth client id/secret live in `.env`.
+
 ## Example
 
 ```bash

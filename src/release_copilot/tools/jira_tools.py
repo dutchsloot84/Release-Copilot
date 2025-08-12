@@ -8,12 +8,29 @@ from release_copilot.kit.caching import load_cache_or_call
 from release_copilot.config.settings import Settings
 
 settings = Settings()
-JIRA = (settings.jira_base_url or "").rstrip("/")
-if JIRA.lower().endswith("/browse"):
-    JIRA = JIRA[: -len("/browse")]
-AUTH = (settings.jira_email, settings.jira_api_token)
-
 TOKEN_PATH = Path("jira_token.json")
+
+
+def _jira_base_url() -> str:
+    base = (settings.jira_base_url or "").rstrip("/")
+    try:
+        if TOKEN_PATH.exists():
+            data = json.loads(TOKEN_PATH.read_text(encoding="utf-8"))
+            url = data.get("cloud_url")
+            if url:
+                return url.rstrip("/")
+            cid = data.get("cloud_id")
+            if cid:
+                return f"https://api.atlassian.com/ex/jira/{cid}"
+    except Exception:
+        pass
+    if base.lower().endswith("/browse"):
+        base = base[: -len("/browse")]
+    return base
+
+
+JIRA = _jira_base_url()
+AUTH = (settings.jira_email, settings.jira_api_token)
 
 
 def _oauth_headers() -> TDict[str, str] | None:

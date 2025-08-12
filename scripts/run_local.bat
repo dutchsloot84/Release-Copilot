@@ -38,7 +38,7 @@ set "LLM_BUDGET=8"
 set "FORCE_REFRESH=N"
 
 REM Offer last run
-for /f "usebackq tokens=*" %%A in (`python -c "from scripts._common_args import load_last; import sys; sys.stdout.write('1' if load_last() else '0')"`) do set HAS_LAST=%%A
+for /f %%A in ('python -c "from scripts._common_args import load_last; import sys; sys.stdout.write('1' if load_last() else '0')"') do set HAS_LAST=%%A
 if "%HAS_LAST%"=="1" (
   echo.
   set /p "USE_LAST=Run with last settings? (Y/N) [N]: "
@@ -58,21 +58,7 @@ if not defined CONFIG (
 echo Using: %CONFIG%
 )
 
-for /f "tokens=1,2,3,4 delims=|" %%A in ('python - <<PY
-import json;import sys
-cfg=json.load(open(r"%CONFIG%"))
-print("|".join([
-    cfg.get("release_branch",""),
-    cfg.get("develop_branch",""),
-    cfg.get("fix_version",""),
-    cfg.get("llm_model","gpt-4o-mini")
-]))
-PY') do (
-  set "REL_BRANCH=%%A"
-  set "DEV_BRANCH=%%B"
-  set "CFG_FIX_VERSION=%%C"
-  set "CFG_LLM_MODEL=%%D"
-)
+for /f "delims=" %%A in ('python -c "import json,sys; cfg=json.load(open(r\"%CONFIG%\")); print('REL_BRANCH='+cfg.get('release_branch','')); print('DEV_BRANCH='+cfg.get('develop_branch','')); print('CFG_FIX_VERSION='+cfg.get('fix_version','')); print('CFG_LLM_MODEL='+cfg.get('llm_model','gpt-4o-mini'))"') do set %%A
 set "LLM_MODEL=%CFG_LLM_MODEL%"
 
 echo.

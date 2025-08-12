@@ -18,8 +18,11 @@ dist/
 /data/outputs/
 /data/.cache/
 /data/.last_run.json
-jira_token.json
 /logs/
+
+# Local secrets
+secrets/
+
 
 # Others
 .DS_Store

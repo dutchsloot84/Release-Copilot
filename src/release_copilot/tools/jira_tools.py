@@ -1,128 +1,167 @@
 from __future__ import annotations
-import json
-import time
+import json, time
 from pathlib import Path
+from typing import List, Dict, Any, Optional
+
 import requests
-from typing import List, Dict, Any, Dict as TDict
-from release_copilot.kit.caching import load_cache_or_call
+
 from release_copilot.config.settings import Settings
+from release_copilot.kit.caching import load_cache_or_call
 
 settings = Settings()
-TOKEN_PATH = Path("jira_token.json")
+
+AUTH_BASE = "https://auth.atlassian.com"
+API_BASE = "https://api.atlassian.com"
+
+TOKEN_FILE = Path(settings.JIRA_TOKEN_FILE)
+
+FIELDS = "key,summary,status,issuetype,assignee,fixVersions,updated"
+PAGE_SIZE = 100
 
 
-def _jira_base_url() -> str:
-    base = (settings.jira_base_url or "").rstrip("/")
-    try:
-        if TOKEN_PATH.exists():
-            data = json.loads(TOKEN_PATH.read_text(encoding="utf-8"))
-            url = data.get("cloud_url")
-            if url:
-                return url.rstrip("/")
-            cid = data.get("cloud_id")
-            if cid:
-                return f"https://api.atlassian.com/ex/jira/{cid}"
-    except Exception:
-        pass
-    if base.lower().endswith("/browse"):
-        base = base[: -len("/browse")]
-    return base
+class JiraOAuth:
+    def __init__(self, client_id: str, client_secret: str, token_path: Path):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.token_path = token_path
+        self._data = self._load()
 
+    def _load(self) -> dict:
+        if not self.token_path.exists():
+            raise RuntimeError(f"Jira OAuth token file not found: {self.token_path}")
+        try:
+            return json.loads(self.token_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            raise RuntimeError(f"Failed to read token file {self.token_path}: {e}")
 
-JIRA = _jira_base_url()
-AUTH = (settings.jira_email, settings.jira_api_token)
+    def _save(self) -> None:
+        self.token_path.parent.mkdir(parents=True, exist_ok=True)
+        self.token_path.write_text(json.dumps(self._data, indent=2), encoding="utf-8")
 
+    @property
+    def access_token(self) -> Optional[str]:
+        return self._data.get("access_token")
 
-def _oauth_headers() -> TDict[str, str] | None:
-    if not TOKEN_PATH.exists():
-        return None
-    try:
-        data = json.loads(TOKEN_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    access = data.get("access_token")
-    expires_at = float(data.get("expires_at", 0))
-    if not access:
-        return None
-    if time.time() >= expires_at - 60:
-        refresh = data.get("refresh_token")
-        cid = data.get("client_id")
-        secret = data.get("client_secret")
-        if not (refresh and cid and secret):
-            return None
+    @property
+    def refresh_token(self) -> str:
+        rt = self._data.get("refresh_token")
+        if not rt:
+            raise RuntimeError("refresh_token missing in Jira OAuth token file.")
+        return rt
+
+    @property
+    def expires_at(self) -> int:
+        return int(self._data.get("expires_at") or 0)
+
+    @property
+    def cloudid(self) -> Optional[str]:
+        return self._data.get("cloudid")
+
+    def _now(self) -> int:
+        return int(time.time())
+
+    def _refresh(self) -> None:
+        url = f"{AUTH_BASE}/oauth/token"
         payload = {
             "grant_type": "refresh_token",
-            "client_id": cid,
-            "client_secret": secret,
-            "refresh_token": refresh,
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "refresh_token": self.refresh_token,
         }
-        r = requests.post("https://auth.atlassian.com/oauth/token", json=payload, timeout=30)
+        r = requests.post(url, json=payload, timeout=30)
         r.raise_for_status()
-        new = r.json()
-        access = new.get("access_token")
-        data["access_token"] = access
-        data["refresh_token"] = new.get("refresh_token", refresh)
-        data["expires_at"] = time.time() + int(new.get("expires_in", 3600))
-        TOKEN_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    return {"Authorization": f"Bearer {access}"}
+        data = r.json()
+        self._data["access_token"] = data.get("access_token")
+        expires_in = int(data.get("expires_in", 0))
+        self._data["expires_at"] = self._now() + max(0, expires_in)
+        if data.get("refresh_token"):
+            self._data["refresh_token"] = data["refresh_token"]
+        self._save()
 
+    def _ensure_access_token(self) -> str:
+        if not self.access_token or self._now() >= (self.expires_at - 90):
+            self._refresh()
+        return self.access_token  # type: ignore
 
-def _auth_kwargs() -> TDict[str, Any]:
-    hdrs = _oauth_headers()
-    if hdrs:
-        return {"headers": hdrs}
-    return {"auth": AUTH}
+    def _ensure_cloudid(self) -> str:
+        if self.cloudid:
+            return self.cloudid  # type: ignore
+        tok = self._ensure_access_token()
+        url = f"{API_BASE}/oauth/token/accessible-resources"
+        r = requests.get(url, headers={"Authorization": f"Bearer {tok}"}, timeout=30)
+        r.raise_for_status()
+        resources = r.json() or []
+        if not resources:
+            raise RuntimeError("No accessible Jira resources found for this token.")
+        for res in resources:
+            if res.get("scopes") and "read:jira-work" in res["scopes"]:
+                self._data["cloudid"] = res.get("id")
+                self._save()
+                return self._data["cloudid"]
+        self._data["cloudid"] = resources[0].get("id")
+        self._save()
+        return self._data["cloudid"]
 
-_FIELDS = "key,summary,status,issuetype,assignee,fixVersions,updated"
-_MAX_RESULTS = 100
+    def session(self) -> requests.Session:
+        tok = self._ensure_access_token()
+        s = requests.Session()
+        s.headers.update({
+            "Accept": "application/json",
+            "Authorization": f"Bearer {tok}",
+        })
+        return s
+
+    def base_v3(self) -> str:
+        cid = self._ensure_cloudid()
+        return f"{API_BASE}/ex/jira/{cid}/rest/api/3"
 
 
 def validate_jql_or_raise(jql: str) -> None:
-    """
-    Fail fast for malformed JQL with a minimal search.
-    Raises requests.HTTPError with the JQL included if status >= 400.
-    """
-    url = f"{JIRA}/rest/api/2/search"
+    if _oauth is None:
+        raise RuntimeError("Jira OAuth not configured")
+    s = _oauth.session()
+    url = f"{_oauth.base_v3()}/search"
     params = {"jql": jql, "startAt": 0, "maxResults": 0, "fields": "key"}
-    kw = _auth_kwargs()
-    r = requests.get(url, params=params, timeout=20, **kw)
+    r = s.get(url, params=params, timeout=20)
     try:
         r.raise_for_status()
     except requests.HTTPError as e:
-        snippet = (jql or "")[:500].replace("\n", " ")
+        details = ""
         try:
             details = r.text[:500]
         except Exception:
-            details = ""
+            pass
         raise requests.HTTPError(
-            f"JQL validation failed ({r.status_code}). JQL: {snippet}  Details: {details}"
+            f"JQL validation failed ({r.status_code}). JQL: {jql}  Details: {details}"
         ) from e
 
 
-def _search_once(jql: str, start_at: int = 0, max_results: int = _MAX_RESULTS) -> Dict[str, Any]:
-    url = f"{JIRA}/rest/api/2/search"
-    params = {"jql": jql, "startAt": start_at, "maxResults": max_results, "fields": _FIELDS}
-    kw = _auth_kwargs()
-    r = requests.get(url, params=params, timeout=30, **kw)
+def _search_once(s: requests.Session, jql: str, start_at: int = 0, max_results: int = PAGE_SIZE) -> Dict[str, Any]:
+    url = f"{_oauth.base_v3()}/search"
+    params = {"jql": jql, "startAt": start_at, "maxResults": max_results, "fields": FIELDS}
+    r = s.get(url, params=params, timeout=30)
     r.raise_for_status()
     return r.json()
 
 
 def search_issues_cached(jql: str, ttl_hours: int = 12, force_refresh: bool = False) -> List[Dict[str, Any]]:
-    key = f"jira:search|jql={jql}|fields={_FIELDS}"
+    if _oauth is None:
+        raise RuntimeError("Jira OAuth not configured")
+    key = f"jira:search|v3|jql={jql}|fields={FIELDS}"
 
     def fetch():
-        data = _search_once(jql, start_at=0)
+        s = _oauth.session()
+        data = _search_once(s, jql, start_at=0)
         total = int(data.get("total", 0))
         issues = data.get("issues", [])
-        start = _MAX_RESULTS
-        while len(issues) < total:
-            page = _search_once(jql, start_at=start)
+        start = len(issues)
+        while start < total:
+            page = _search_once(s, jql, start_at=start)
             issues.extend(page.get("issues", []))
-            start += _MAX_RESULTS
+            start = len(issues)
         out = []
         for i in issues:
-            f = i.get("fields", {})
+            f = i.get("fields", {}) or {}
             out.append({
                 "key": i.get("key"),
                 "summary": f.get("summary"),
@@ -135,5 +174,36 @@ def search_issues_cached(jql: str, ttl_hours: int = 12, force_refresh: bool = Fa
             })
         return {"issues": out}
 
-    data, source = load_cache_or_call(key, ttl_hours=ttl_hours, fetch_fn=fetch, force_refresh=force_refresh)
+    data, _ = load_cache_or_call(key, ttl_hours=ttl_hours, fetch_fn=fetch, force_refresh=force_refresh)
     return data.get("issues", [])
+
+
+def _self_test() -> int:
+    if _oauth is None:
+        print("Jira OAuth self-test failed: OAuth not configured")
+        return 1
+    try:
+        s = _oauth.session()
+        cid = _oauth._ensure_cloudid()
+        validate_jql_or_raise("ORDER BY updated DESC")
+        print(f"Jira OAuth self-test: OK (cloudid={cid})")
+        return 0
+    except Exception as e:
+        print(f"Jira OAuth self-test failed: {e}")
+        return 1
+
+
+try:
+    _oauth = JiraOAuth(
+        settings.ATLASSIAN_OAUTH_CLIENT_ID,
+        settings.ATLASSIAN_OAUTH_CLIENT_SECRET,
+        TOKEN_FILE,
+    )
+except Exception:
+    _oauth = None
+
+if __name__ == "__main__":
+    import sys
+    if "--self-test" in sys.argv:
+        sys.exit(_self_test())
+    print("Usage: python -m release_copilot.tools.jira_tools --self-test")

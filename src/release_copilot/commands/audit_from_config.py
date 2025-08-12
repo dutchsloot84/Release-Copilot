@@ -136,7 +136,7 @@ def resolve_jql(args, settings) -> str:
     if getattr(args, "jql", None):
         return args.jql.strip()
 
-    tmpl = settings.default_jql  # DO NOT modify/strip
+    tmpl = settings.DEFAULT_JQL  # DO NOT modify/strip
     if not tmpl:
         raise SystemExit("No JQL provided and DEFAULT_JQL is empty. Provide --jql or set DEFAULT_JQL in .env")
 

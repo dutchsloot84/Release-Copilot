@@ -24,12 +24,11 @@ def _test_endpoint(url: str, auth: Optional[tuple[str, str]] = None) -> bool:
 def run_wizard() -> None:
     console.print('[bold]Release Copilot Environment Wizard[/bold]')
     data = {}
-    data['JIRA_BASE_URL'] = Prompt.ask('Jira base URL (e.g. https://jira.example.com)').rstrip('/')
-    data['JIRA_EMAIL'] = Prompt.ask('Jira email')
-    data['JIRA_API_TOKEN'] = getpass('Jira API token: ')
-
-    jira_ok = _test_endpoint(f"{data['JIRA_BASE_URL']}/rest/api/2/myself", auth=(data['JIRA_EMAIL'], data['JIRA_API_TOKEN']))
-    console.print(f"Jira connectivity: {'[green]✓[/green]' if jira_ok else '[red]✗[/red]'}")
+    data['JIRA_BASE_URL'] = Prompt.ask('Jira base URL (e.g. https://yourtenant.atlassian.net)').rstrip('/')
+    data['ATLASSIAN_OAUTH_CLIENT_ID'] = Prompt.ask('Atlassian OAuth client ID')
+    data['ATLASSIAN_OAUTH_CLIENT_SECRET'] = getpass('Atlassian OAuth client secret: ')
+    default_token_path = 'secrets/jira_oauth.json'
+    data['JIRA_TOKEN_FILE'] = Prompt.ask('Path to Jira OAuth token file', default=default_token_path)
 
     data['BITBUCKET_BASE_URL'] = Prompt.ask(
         'Bitbucket base URL (e.g. https://bitbucket.example.com/rest/api/1.0)'

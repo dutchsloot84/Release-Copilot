@@ -198,6 +198,22 @@ When you provide `--fix-version` or `--jql`, Release Copilot will:
 
 These are linked from `release_audit.md` and included as sheets in `release_audit.xlsx`.
 
+### Jira OAuth (3LO)
+
+Release Copilot uses OAuth 2.0 Bearer tokens only.
+
+- Put your refresh token (and optional current access token) in `secrets/jira_oauth.json`.
+- Store your app credentials in `.env`:
+  - `ATLASSIAN_OAUTH_CLIENT_ID`
+  - `ATLASSIAN_OAUTH_CLIENT_SECRET`
+- The tool refreshes access tokens automatically and caches your Jira Cloud ID in the token file.
+
+Self-test your setup:
+
+```bash
+python -m release_copilot.tools.jira_tools --self-test
+```
+
 Examples:
 ```bash
 python -m release_copilot.commands.audit_from_config \
@@ -222,6 +238,6 @@ pair once and store it locally:
 python scripts/write_jira_token.py CLIENT_ID CLIENT_SECRET CODE
 ```
 
-Follow Atlassian's docs to obtain the authorization `CODE`. The script
-writes `jira_token.json` (gitignored) and the tools automatically use and
-refresh this token for subsequent Jira requests.
+The script writes to the path from `JIRA_TOKEN_FILE` (default
+`secrets/jira_oauth.json`) and the tools automatically use and refresh
+this token for subsequent Jira requests.

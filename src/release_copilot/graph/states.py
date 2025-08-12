@@ -1,5 +1,5 @@
 from typing import List, Dict, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RunState(BaseModel):
@@ -9,10 +9,10 @@ class RunState(BaseModel):
     branch: str
     since: Optional[str] = None
     jql: Optional[str] = None
-    jira_issues: List[Dict] = []
-    commits: List[Dict] = []
-    matches: List[Dict] = []
-    missing_in_git: List[Dict] = []
-    commits_without_story: List[Dict] = []
-    artifacts: Dict[str, str] = {}
+    jira_issues: List[Dict] = Field(default_factory=list)
+    commits: List[Dict] = Field(default_factory=list)
+    matches: List[Dict] = Field(default_factory=list)
+    missing_in_git: List[Dict] = Field(default_factory=list)
+    commits_without_story: List[Dict] = Field(default_factory=list)
+    artifacts: Dict[str, str] = Field(default_factory=dict)
     error: Optional[str] = None

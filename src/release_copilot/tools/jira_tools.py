@@ -178,6 +178,15 @@ def search_issues_cached(jql: str, ttl_hours: int = 12, force_refresh: bool = Fa
     return data.get("issues", [])
 
 
+def get_jira_issues(jql: str | None = None, fix_version: str | None = None) -> List[Dict[str, Any]]:
+    """Fetch Jira issues by JQL or fix version label."""
+    if not jql:
+        if not fix_version:
+            raise ValueError("jql or fix_version must be provided")
+        jql = f'fixVersion = "{fix_version}"'
+    return search_issues_cached(jql)
+
+
 def _self_test() -> int:
     if _oauth is None:
         print("Jira OAuth self-test failed: OAuth not configured")

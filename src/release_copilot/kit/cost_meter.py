@@ -5,8 +5,8 @@ from rich.console import Console
 
 # Rough price mapping per 1K tokens
 MODEL_PRICES = {
-    'gpt-4o-mini': 0.00015,
-    'gpt-4o': 0.01,
+    'gpt-4o-mini': {'prompt': 0.00015, 'completion': 0.0006},
+    'gpt-4o': {'prompt': 0.005, 'completion': 0.015},
 }
 
 console = Console()
@@ -20,8 +20,11 @@ class StepCost:
 
     @property
     def cost(self) -> float:
-        price = MODEL_PRICES.get(self.model, 0.0)
-        return price * (self.prompt_tokens + self.completion_tokens) / 1000
+        price = MODEL_PRICES.get(self.model, {'prompt': 0.0, 'completion': 0.0})
+        return (
+            self.prompt_tokens * price.get('prompt', 0.0)
+            + self.completion_tokens * price.get('completion', 0.0)
+        ) / 1000
 
 
 class CostSession:

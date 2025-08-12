@@ -164,7 +164,7 @@ def main() -> None:
     parser.add_argument("--write-report", action="store_true", help="Write Markdown and Excel reports")
     parser.add_argument("--report-name", type=str, default="release_audit", help="Base name for Markdown/Excel reports")
     parser.add_argument("--write-llm-summary", action="store_true", default=False, help="Generate optional LLM-written narrative")
-    parser.add_argument("--llm-model", type=str, default="gpt-4o-mini", help="LLM model for narrative (default: gpt-4o-mini)")
+    parser.add_argument("--llm-model", type=str, default=None, help="LLM model for narrative (default from config or gpt-4o-mini)")
     parser.add_argument("--llm-max-tokens", type=int, default=1200, help="Max tokens for LLM completion")
     parser.add_argument("--llm-budget-cents", type=int, default=10, help="Hard cap on estimated LLM spend (cents)")
     parser.add_argument("--llm-top-n", type=int, default=15, help="Highlights per repo to include in LLM context")
@@ -176,6 +176,11 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+
+    if not args.fix_version and cfg.fix_version:
+        args.fix_version = cfg.fix_version
+    if not args.llm_model:
+        args.llm_model = cfg.llm_model or "gpt-4o-mini"
 
     since_utc, until_utc = (
         (_parse_iso_date(args.since), _parse_iso_date(args.until))

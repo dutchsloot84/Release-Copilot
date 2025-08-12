@@ -1,6 +1,9 @@
 from __future__ import annotations
+import json
+import time
+from pathlib import Path
 import requests
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Dict as TDict
 from release_copilot.kit.caching import load_cache_or_call
 from release_copilot.config.settings import Settings
 
@@ -9,6 +12,49 @@ JIRA = (settings.jira_base_url or "").rstrip("/")
 if JIRA.lower().endswith("/browse"):
     JIRA = JIRA[: -len("/browse")]
 AUTH = (settings.jira_email, settings.jira_api_token)
+
+TOKEN_PATH = Path("jira_token.json")
+
+
+def _oauth_headers() -> TDict[str, str] | None:
+    if not TOKEN_PATH.exists():
+        return None
+    try:
+        data = json.loads(TOKEN_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    access = data.get("access_token")
+    expires_at = float(data.get("expires_at", 0))
+    if not access:
+        return None
+    if time.time() >= expires_at - 60:
+        refresh = data.get("refresh_token")
+        cid = data.get("client_id")
+        secret = data.get("client_secret")
+        if not (refresh and cid and secret):
+            return None
+        payload = {
+            "grant_type": "refresh_token",
+            "client_id": cid,
+            "client_secret": secret,
+            "refresh_token": refresh,
+        }
+        r = requests.post("https://auth.atlassian.com/oauth/token", json=payload, timeout=30)
+        r.raise_for_status()
+        new = r.json()
+        access = new.get("access_token")
+        data["access_token"] = access
+        data["refresh_token"] = new.get("refresh_token", refresh)
+        data["expires_at"] = time.time() + int(new.get("expires_in", 3600))
+        TOKEN_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return {"Authorization": f"Bearer {access}"}
+
+
+def _auth_kwargs() -> TDict[str, Any]:
+    hdrs = _oauth_headers()
+    if hdrs:
+        return {"headers": hdrs}
+    return {"auth": AUTH}
 
 _FIELDS = "key,summary,status,issuetype,assignee,fixVersions,updated"
 _MAX_RESULTS = 100
@@ -21,7 +67,8 @@ def validate_jql_or_raise(jql: str) -> None:
     """
     url = f"{JIRA}/rest/api/2/search"
     params = {"jql": jql, "startAt": 0, "maxResults": 0, "fields": "key"}
-    r = requests.get(url, params=params, auth=AUTH, timeout=20)
+    kw = _auth_kwargs()
+    r = requests.get(url, params=params, timeout=20, **kw)
     try:
         r.raise_for_status()
     except requests.HTTPError as e:
@@ -38,7 +85,8 @@ def validate_jql_or_raise(jql: str) -> None:
 def _search_once(jql: str, start_at: int = 0, max_results: int = _MAX_RESULTS) -> Dict[str, Any]:
     url = f"{JIRA}/rest/api/2/search"
     params = {"jql": jql, "startAt": start_at, "maxResults": max_results, "fields": _FIELDS}
-    r = requests.get(url, params=params, auth=AUTH, timeout=30)
+    kw = _auth_kwargs()
+    r = requests.get(url, params=params, timeout=30, **kw)
     r.raise_for_status()
     return r.json()
 

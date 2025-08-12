@@ -1,0 +1,12 @@
+{
+  "repos": {
+    "STARSYSONE/policycenter": "PC",
+    "STARSYSONE/contactmanager": "CM",
+    "STARSYSONE/claimcenter": "CC",
+    "STARSYSONE/billingcenter": "BC"
+  },
+  "release_branch": "release/r-55.1",
+  "develop_branch": "develop",
+  "fix_version": "Mobilitas 2025.08.22",
+  "llm_model": "gpt-4o-mini"
+}

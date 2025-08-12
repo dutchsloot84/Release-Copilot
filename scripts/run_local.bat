@@ -33,7 +33,7 @@ set "CONFIG="
 set "BRANCH_MODE=both"
 set "FIX_VERSION="
 set "WRITE_LLM=N"
-set "LLM_MODEL=gpt-4o-mini"
+set "LLM_MODEL="
 set "LLM_BUDGET=8"
 set "FORCE_REFRESH=N"
 
@@ -55,21 +55,39 @@ if not defined CONFIG (
   echo Please create one then re-run.
   pause & exit /b 1
 ) else (
-  echo Using: %CONFIG%
+echo Using: %CONFIG%
 )
 
+for /f "tokens=1,2,3,4 delims=|" %%A in ('python - <<PY
+import json;import sys
+cfg=json.load(open(r"%CONFIG%"))
+print("|".join([
+    cfg.get("release_branch",""),
+    cfg.get("develop_branch",""),
+    cfg.get("fix_version",""),
+    cfg.get("llm_model","gpt-4o-mini")
+]))
+PY') do (
+  set "REL_BRANCH=%%A"
+  set "DEV_BRANCH=%%B"
+  set "CFG_FIX_VERSION=%%C"
+  set "CFG_LLM_MODEL=%%D"
+)
+set "LLM_MODEL=%CFG_LLM_MODEL%"
+
 echo.
-set /p "BRANCH_MODE=Branch mode [release/develop/both] (default both): "
+set /p "BRANCH_MODE=Branch mode [release (!REL_BRANCH!)/develop (!DEV_BRANCH!)/both] (default both): "
 if /I "%BRANCH_MODE%"=="" set "BRANCH_MODE=both"
 
 echo.
-set /p "FIX_VERSION=Fix Version (optional, e.g., Mobilitas 2025.08.22): "
+set /p "FIX_VERSION=Fix Version (optional, default !CFG_FIX_VERSION!): "
+if "!FIX_VERSION!"=="" set "FIX_VERSION=!CFG_FIX_VERSION!"
 
 echo.
 set /p "WRITE_LLM=Write LLM narrative? (Y/N) [N]: "
 if /I "%WRITE_LLM%"=="Y" (
-  set /p "LLM_MODEL=Model [gpt-4o-mini]: "
-  if "%LLM_MODEL%"=="" set "LLM_MODEL=gpt-4o-mini"
+  set /p "LLM_MODEL=Model [!CFG_LLM_MODEL!]: "
+  if "!LLM_MODEL!"=="" set "LLM_MODEL=!CFG_LLM_MODEL!"
   set /p "LLM_BUDGET=Budget (cents) [8]: "
   if "%LLM_BUDGET%"=="" set "LLM_BUDGET=8"
 )
@@ -80,7 +98,7 @@ set /p "FORCE_REFRESH=Force refresh caches? (Y/N) [N]: "
 echo.
 echo --- Summary ---
 echo Config: %CONFIG%
-echo Branch mode: %BRANCH_MODE%
+echo Branch mode: %BRANCH_MODE% (release=%REL_BRANCH%, develop=%DEV_BRANCH%)
 echo Fix Version: %FIX_VERSION%
 echo LLM narrative: %WRITE_LLM% (model=%LLM_MODEL%, budget=%LLM_BUDGET%c)
 echo Force refresh: %FORCE_REFRESH%

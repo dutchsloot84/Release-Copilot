@@ -55,19 +55,31 @@ PY
     fi
     echo "Using config: $CONFIG"
 
-    read -r -p "Branch mode [release/develop/both] (default both): " BRANCH_MODE
+    IFS=$'\n' read -r REL_BRANCH DEV_BRANCH CFG_FIX CFG_LLM <<EOF
+$(python - <<PY "$CONFIG"
+import json,sys
+cfg=json.load(open(sys.argv[1]))
+print(cfg.get("release_branch",""))
+print(cfg.get("develop_branch",""))
+print(cfg.get("fix_version",""))
+print(cfg.get("llm_model","gpt-4o-mini"))
+PY)
+EOF
+
+    read -r -p "Branch mode [release ($REL_BRANCH)/develop ($DEV_BRANCH)/both] (default both): " BRANCH_MODE
     BRANCH_MODE=${BRANCH_MODE:-both}
 
-    read -r -p "Fix Version (optional, e.g., Mobilitas 2025.08.22): " FIX_VERSION
+    read -r -p "Fix Version (optional, default $CFG_FIX): " FIX_VERSION
+    FIX_VERSION=${FIX_VERSION:-$CFG_FIX}
 
     read -r -p "Write LLM narrative? (y/N) " WRITE_LLM
     if [[ "${WRITE_LLM:-N}" =~ ^[Yy]$ ]]; then
-      read -r -p "Model [gpt-4o-mini]: " LLM_MODEL
-      LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      read -r -p "Model [$CFG_LLM]: " LLM_MODEL
+      LLM_MODEL=${LLM_MODEL:-$CFG_LLM}
       read -r -p "Budget (cents) [8]: " LLM_BUDGET
       LLM_BUDGET=${LLM_BUDGET:-8}
     else
-      LLM_MODEL=gpt-4o-mini
+      LLM_MODEL=$CFG_LLM
       LLM_BUDGET=8
     fi
 
@@ -76,7 +88,7 @@ PY
     echo
     echo "--- Summary ---"
     echo "Config: $CONFIG"
-    echo "Branch mode: $BRANCH_MODE"
+    echo "Branch mode: $BRANCH_MODE (release=$REL_BRANCH, develop=$DEV_BRANCH)"
     echo "Fix Version: ${FIX_VERSION:-<none>}"
     echo "LLM narrative: ${WRITE_LLM:-N} (model=$LLM_MODEL, budget=${LLM_BUDGET}c)"
     echo "Force refresh: ${FORCE_REFRESH:-N}"

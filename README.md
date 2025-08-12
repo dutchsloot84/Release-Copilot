@@ -64,9 +64,9 @@ App:    python -m release_copilot.commands.audit_from_config
 Double-click `scripts/run_local.bat` (Windows) or run `./scripts/run_local.sh` (macOS/Linux) with **no args** and you’ll get:
 
 - auto-detect config JSON
-- pick branch mode (release/develop/both)
-- optional Fix Version (enables Jira comparison)
-- optional LLM narrative (model + budget)
+- show default release/develop branches and pick branch mode
+- optional Fix Version (uses config default if present)
+- optional LLM narrative (model + budget; model defaults from config)
 - summary screen, then run
 
 The script remembers your **last run** in `data/.last_run.json` so you can repeat with one keystroke. On success it opens `data/outputs/` automatically.
@@ -126,7 +126,9 @@ repo/branch pair. A minimal config:
     "STARSYSONE/contactmanager": "CM"
   },
   "release_branch": "release/r-55.0",
-  "develop_branch": "develop"
+  "develop_branch": "develop",
+  "fix_version": "Mobilitas 2025.08.22",
+  "llm_model": "gpt-4o-mini"
 }
 ```
 
@@ -138,6 +140,10 @@ the config.
 Results are cached under `data/.cache` using a key composed of project,
 repo, branch and date window. Control cache behaviour with
 `--cache-ttl-hours` and `--force-refresh`.
+
+If `fix_version` or `llm_model` are present in the config they act as
+defaults for the CLI/scripts. The guided `run_local` launchers display
+these values and let you accept or override them.
 
 Example:
 
@@ -206,3 +212,16 @@ Example inputs that all work:
 - Mobilitas 2025.08.22
 - "Mobilitas 2025.08.22"
 - 'Mobilitas 2025.08.22'
+
+### Jira OAuth token
+
+If your Jira Cloud instance blocks API tokens, generate an OAuth token
+pair once and store it locally:
+
+```bash
+python scripts/write_jira_token.py CLIENT_ID CLIENT_SECRET CODE
+```
+
+Follow Atlassian's docs to obtain the authorization `CODE`. The script
+writes `jira_token.json` (gitignored) and the tools automatically use and
+refresh this token for subsequent Jira requests.

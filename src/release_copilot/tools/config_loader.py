@@ -15,6 +15,8 @@ class ConfigData:
     repos: Dict[str, str]
     release_branch: Optional[str] = None
     develop_branch: Optional[str] = None
+    fix_version: Optional[str] = None
+    llm_model: Optional[str] = None
 
 
 def load_config(path: str | Path) -> ConfigData:
@@ -51,7 +53,15 @@ def load_config(path: str | Path) -> ConfigData:
 
     release_branch = data.get("release_branch")
     develop_branch = data.get("develop_branch")
+    fix_version = data.get("fix_version")
+    llm_model = data.get("llm_model")
     if not (release_branch or develop_branch):
         raise ConfigError("Config must define 'release_branch' or 'develop_branch'")
 
-    return ConfigData(repos=repos, release_branch=release_branch, develop_branch=develop_branch)
+    return ConfigData(
+        repos=repos,
+        release_branch=release_branch,
+        develop_branch=develop_branch,
+        fix_version=fix_version,
+        llm_model=llm_model,
+    )

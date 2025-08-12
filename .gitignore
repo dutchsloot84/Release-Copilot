@@ -17,7 +17,12 @@ dist/
 # Data
 /data/outputs/
 /data/.cache/
+/data/.last_run.json
 /logs/
+
+# Local secrets
+secrets/
+
 
 # Others
 .DS_Store

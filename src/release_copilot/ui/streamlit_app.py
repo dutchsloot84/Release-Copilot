@@ -16,8 +16,15 @@ st.title("🧰 Release Copilot — Local POC")
 
 with st.expander("Environment status", expanded=False):
     missing = []
-    for key in ["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN",
-                "BITBUCKET_BASE_URL", "BITBUCKET_EMAIL", "BITBUCKET_APP_PASSWORD"]:
+    for key in [
+        "JIRA_BASE_URL",
+        "ATLASSIAN_OAUTH_CLIENT_ID",
+        "ATLASSIAN_OAUTH_CLIENT_SECRET",
+        "JIRA_TOKEN_FILE",
+        "BITBUCKET_BASE_URL",
+        "BITBUCKET_EMAIL",
+        "BITBUCKET_APP_PASSWORD",
+    ]:
         if not os.getenv(key):
             missing.append(key)
     if missing:

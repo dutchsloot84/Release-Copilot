@@ -56,8 +56,43 @@ Both scripts install requirements, perform an editable install, then run:
 
 ```
 Wizard: python -m release_copilot.config.env_wizard
-App:    python -m release_copilot.app
+App:    python -m release_copilot.commands.audit_from_config
 ```
+
+### Guided CLI (friendly prompts)
+
+Double-click `scripts/run_local.bat` (Windows) or run `./scripts/run_local.sh` (macOS/Linux) with **no args** and you’ll get:
+
+- auto-detect config JSON
+- show default release/develop branches and pick branch mode
+- optional Fix Version (uses config default if present)
+- optional LLM narrative (model + budget; model defaults from config)
+- summary screen, then run
+
+The script remembers your **last run** in `data/.last_run.json` so you can repeat with one keystroke. On success it opens `data/outputs/` automatically.
+
+### Connectivity only
+
+Quickly verify credentials and network access without running a full audit:
+
+```bash
+python -m release_copilot.commands.audit_from_config --connectivity-only
+```
+
+The check verifies:
+
+- Bitbucket access (lists repos for `BITBUCKET_PROJECT`)
+- Jira OAuth access (`--self-test` on v3 API with token auto-refresh)
+
+Token file location:
+Set `JIRA_TOKEN_FILE=secrets/jira_oauth.json` in `.env`. The file stores:
+
+- `refresh_token` (required)
+- `access_token` (refreshed automatically)
+- `expires_at` (epoch seconds)
+- `cloudid` (discovered and cached)
+
+Keep `secrets/` and `.env` out of git. The OAuth client id/secret live in `.env`.
 
 ## Example
 
@@ -100,3 +135,132 @@ A full run typically costs **$0.25–$0.80** depending on models. Re-running wit
 ## Optional features
 * Confluence publishing: enable by setting `CONFLUENCE_ENABLED=true` in `.env` or passing `--enable-confluence`.
 * LlamaIndex: toggle with `ENABLE_LLAMAINDEX=true`.
+
+## Audit from JSON config
+
+`release_copilot.commands.audit_from_config` reads a config file that
+lists repositories and default branches, then fetches commits for each
+repo/branch pair. A minimal config:
+
+```json
+{
+  "repos": {
+    "STARSYSONE/policycenter": "PC",
+    "STARSYSONE/contactmanager": "CM"
+  },
+  "release_branch": "release/r-55.0",
+  "develop_branch": "develop",
+  "fix_version": "Mobilitas 2025.08.22",
+  "llm_model": "gpt-4o-mini"
+}
+```
+
+CLI overrides take precedence over config values. Branch selection is
+mutually exclusive: use `--develop-only` or `--release-only`; without either
+flag both branches are processed (release first). Repos are always taken from
+the config.
+
+Results are cached under `data/.cache` using a key composed of project,
+repo, branch and date window. Control cache behaviour with
+`--cache-ttl-hours` and `--force-refresh`.
+
+If `fix_version` or `llm_model` are present in the config they act as
+defaults for the CLI/scripts. The guided `run_local` launchers display
+these values and let you accept or override them.
+
+Example:
+
+```bash
+# Run both release and develop for all repos in config.json
+python -m release_copilot.commands.audit_from_config \
+  --config config/release_audit_config.json \
+  --cache-ttl-hours 12
+
+# Release only, override release branch and force-refresh cache
+python -m release_copilot.commands.audit_from_config \
+  --config config/release_audit_config.json \
+  --release-only \
+  --release-branch release/r-55.1 \
+  --force-refresh
+
+# Develop only, override both branches from CLI (develop-only means only develop is used)
+python -m release_copilot.commands.audit_from_config \
+  --config config/release_audit_config.json \
+  --develop-only \
+  --develop-branch develop
+```
+
+### Optional LLM Narrative (Hybrid Mode)
+
+By default, the audit writes CSV/Markdown/Excel for **$0**.
+
+Enable an **LLM-written narrative** only when you want it:
+
+```bash
+python -m release_copilot.commands.audit_from_config \
+  --config config/release_audit_config.json \
+  --release-only \
+  --write-llm-summary --llm-model gpt-4o-mini --llm-budget-cents 8
+```
+
+Cost controls:
+
+- Sends only compact highlights (top N lines per repo), not full logs.
+- Enforces a hard budget (`--llm-budget-cents`), otherwise skips.
+- Caches output by fingerprint — reruns are free unless highlights change.
+
+### Jira comparison (missing stories & orphan commits)
+
+When you provide `--fix-version` or `--jql`, Release Copilot will:
+
+1. Fetch Jira issues via JQL (cached).
+2. Extract Jira keys from commit messages.
+3. Compare sets and write:
+   - `missing_in_repo.csv` — Jira issues with no matching commit
+   - `orphan_commits.csv` — Commits with no Jira key or keys not in the Jira set
+
+These are linked from `release_audit.md` and included as sheets in `release_audit.xlsx`.
+
+### Jira OAuth (3LO)
+
+Release Copilot uses OAuth 2.0 Bearer tokens only.
+
+- Put your refresh token (and optional current access token) in `secrets/jira_oauth.json`.
+- Store your app credentials in `.env`:
+  - `ATLASSIAN_OAUTH_CLIENT_ID`
+  - `ATLASSIAN_OAUTH_CLIENT_SECRET`
+- The tool refreshes access tokens automatically and caches your Jira Cloud ID in the token file.
+
+Self-test your setup:
+
+```bash
+python -m release_copilot.tools.jira_tools --self-test
+```
+
+Examples:
+```bash
+python -m release_copilot.commands.audit_from_config \
+  --config config/release_audit_config.json \
+  --release-only \
+  --fix-version "Mobilitas 2025.08.22" \
+  --jql-ttl-hours 12
+```
+
+**Tip:** You can enter Fix Version with or without quotes. We automatically trim outer quotes/whitespace.
+Example inputs that all work:
+- Mobilitas 2025.08.22
+- "Mobilitas 2025.08.22"
+- 'Mobilitas 2025.08.22'
+
+### Jira OAuth token
+
+If your Jira Cloud instance blocks API tokens, generate an OAuth token
+pair once and store it locally:
+
+```bash
+python scripts/write_jira_token.py CLIENT_ID CLIENT_SECRET CODE
+```
+
+The script writes to the path from `JIRA_TOKEN_FILE` (default
+`secrets/jira_oauth.json`) and the tools automatically use and refresh
+this token for subsequent Jira requests.

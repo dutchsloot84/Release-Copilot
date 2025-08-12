@@ -13,3 +13,4 @@ tenacity
 pyyaml
 pytest
 streamlit>=1.35
+openai>=1.40

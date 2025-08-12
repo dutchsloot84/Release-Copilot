@@ -1,67 +1,209 @@
-from typing import List
+from __future__ import annotations
+import json, time
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+
 import requests
-from langchain.tools import tool
-from tenacity import retry, stop_after_attempt, wait_exponential
 
-from release_copilot.config.settings import settings
-from release_copilot.kit.caching import cache_json
+from release_copilot.config.settings import Settings
+from release_copilot.kit.caching import load_cache_or_call
 
-BASE = settings.jira_base_url
-AUTH = (settings.jira_email, settings.jira_api_token)
+settings = Settings()
 
+AUTH_BASE = "https://auth.atlassian.com"
+API_BASE = "https://api.atlassian.com"
 
-def _resolve_jql(user_jql: str | None, fix_version: str | None) -> str:
-    if user_jql and user_jql.strip():
-        return user_jql.strip()
-    tmpl = (settings.default_jql or '').strip()
-    if tmpl:
-        if '{fix_version}' in tmpl and not fix_version:
-            raise ValueError('DEFAULT_JQL requires {fix_version}, but fix_version is missing.')
-        return tmpl.format(fix_version=fix_version) if '{fix_version}' in tmpl else tmpl
-    if fix_version:
-        return f'fixVersion = "{fix_version}" ORDER BY key'
-    raise ValueError('No JQL provided and no fix_version available to build a default query.')
+TOKEN_FILE = Path(settings.JIRA_TOKEN_FILE)
+
+FIELDS = "key,summary,status,issuetype,assignee,fixVersions,updated"
+PAGE_SIZE = 100
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
-def _jira_search(jql: str, start_at: int = 0, max_results: int = 50, fields: str = 'key,summary,status'):
-    params = {
-        'jql': jql,
-        'startAt': start_at,
-        'maxResults': max_results,
-        'fields': fields,
-    }
-    r = requests.get(f'{BASE}/rest/api/2/search', params=params, auth=AUTH, timeout=10)
+class JiraOAuth:
+    def __init__(self, client_id: str, client_secret: str, token_path: Path):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.token_path = token_path
+        self._data = self._load()
+
+    def _load(self) -> dict:
+        if not self.token_path.exists():
+            raise RuntimeError(f"Jira OAuth token file not found: {self.token_path}")
+        try:
+            return json.loads(self.token_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            raise RuntimeError(f"Failed to read token file {self.token_path}: {e}")
+
+    def _save(self) -> None:
+        self.token_path.parent.mkdir(parents=True, exist_ok=True)
+        self.token_path.write_text(json.dumps(self._data, indent=2), encoding="utf-8")
+
+    @property
+    def access_token(self) -> Optional[str]:
+        return self._data.get("access_token")
+
+    @property
+    def refresh_token(self) -> str:
+        rt = self._data.get("refresh_token")
+        if not rt:
+            raise RuntimeError("refresh_token missing in Jira OAuth token file.")
+        return rt
+
+    @property
+    def expires_at(self) -> int:
+        return int(self._data.get("expires_at") or 0)
+
+    @property
+    def cloudid(self) -> Optional[str]:
+        return self._data.get("cloudid")
+
+    def _now(self) -> int:
+        return int(time.time())
+
+    def _refresh(self) -> None:
+        url = f"{AUTH_BASE}/oauth/token"
+        payload = {
+            "grant_type": "refresh_token",
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "refresh_token": self.refresh_token,
+        }
+        r = requests.post(url, json=payload, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        self._data["access_token"] = data.get("access_token")
+        expires_in = int(data.get("expires_in", 0))
+        self._data["expires_at"] = self._now() + max(0, expires_in)
+        if data.get("refresh_token"):
+            self._data["refresh_token"] = data["refresh_token"]
+        self._save()
+
+    def _ensure_access_token(self) -> str:
+        if not self.access_token or self._now() >= (self.expires_at - 90):
+            self._refresh()
+        return self.access_token  # type: ignore
+
+    def _ensure_cloudid(self) -> str:
+        if self.cloudid:
+            return self.cloudid  # type: ignore
+        tok = self._ensure_access_token()
+        url = f"{API_BASE}/oauth/token/accessible-resources"
+        r = requests.get(url, headers={"Authorization": f"Bearer {tok}"}, timeout=30)
+        r.raise_for_status()
+        resources = r.json() or []
+        if not resources:
+            raise RuntimeError("No accessible Jira resources found for this token.")
+        for res in resources:
+            if res.get("scopes") and "read:jira-work" in res["scopes"]:
+                self._data["cloudid"] = res.get("id")
+                self._save()
+                return self._data["cloudid"]
+        self._data["cloudid"] = resources[0].get("id")
+        self._save()
+        return self._data["cloudid"]
+
+    def session(self) -> requests.Session:
+        tok = self._ensure_access_token()
+        s = requests.Session()
+        s.headers.update({
+            "Accept": "application/json",
+            "Authorization": f"Bearer {tok}",
+        })
+        return s
+
+    def base_v3(self) -> str:
+        cid = self._ensure_cloudid()
+        return f"{API_BASE}/ex/jira/{cid}/rest/api/3"
+
+
+def validate_jql_or_raise(jql: str) -> None:
+    if _oauth is None:
+        raise RuntimeError("Jira OAuth not configured")
+    s = _oauth.session()
+    url = f"{_oauth.base_v3()}/search"
+    params = {"jql": jql, "startAt": 0, "maxResults": 0, "fields": "key"}
+    r = s.get(url, params=params, timeout=20)
+    try:
+        r.raise_for_status()
+    except requests.HTTPError as e:
+        details = ""
+        try:
+            details = r.text[:500]
+        except Exception:
+            pass
+        raise requests.HTTPError(
+            f"JQL validation failed ({r.status_code}). JQL: {jql}  Details: {details}"
+        ) from e
+
+
+def _search_once(s: requests.Session, jql: str, start_at: int = 0, max_results: int = PAGE_SIZE) -> Dict[str, Any]:
+    url = f"{_oauth.base_v3()}/search"
+    params = {"jql": jql, "startAt": start_at, "maxResults": max_results, "fields": FIELDS}
+    r = s.get(url, params=params, timeout=30)
     r.raise_for_status()
     return r.json()
 
 
-@cache_json('jira', ttl_hours=12)
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
-def _fetch_jira_issues(jql: str) -> List[dict]:
-    issues: List[dict] = []
-    start = 0
-    page_size = 200
-    while True:
-        data = _jira_search(jql + ' ORDER BY key', start_at=start, max_results=page_size)
-        page = data.get('issues', [])
-        issues.extend([
-            {
-                'key': i['key'],
-                'summary': i['fields']['summary'],
-                'status': i['fields']['status']['name'],
-            }
-            for i in page
-        ])
-        if len(page) < page_size:
-            break
-        start += page_size
-    return issues
+def search_issues_cached(jql: str, ttl_hours: int = 12, force_refresh: bool = False) -> List[Dict[str, Any]]:
+    if _oauth is None:
+        raise RuntimeError("Jira OAuth not configured")
+    key = f"jira:search|v3|jql={jql}|fields={FIELDS}"
+
+    def fetch():
+        s = _oauth.session()
+        data = _search_once(s, jql, start_at=0)
+        total = int(data.get("total", 0))
+        issues = data.get("issues", [])
+        start = len(issues)
+        while start < total:
+            page = _search_once(s, jql, start_at=start)
+            issues.extend(page.get("issues", []))
+            start = len(issues)
+        out = []
+        for i in issues:
+            f = i.get("fields", {}) or {}
+            out.append({
+                "key": i.get("key"),
+                "summary": f.get("summary"),
+                "status": (f.get("status") or {}).get("name"),
+                "issuetype": (f.get("issuetype") or {}).get("name"),
+                "assignee": ((f.get("assignee") or {}).get("displayName") or ""),
+                "fixVersions": [v.get("name") for v in (f.get("fixVersions") or [])],
+                "updated": f.get("updated"),
+                "self": i.get("self"),
+            })
+        return {"issues": out}
+
+    data, _ = load_cache_or_call(key, ttl_hours=ttl_hours, fetch_fn=fetch, force_refresh=force_refresh)
+    return data.get("issues", [])
 
 
-@tool('get_jira_issues', return_direct=False)
-def get_jira_issues(jql: str | None = None, fix_version: str | None = None) -> List[dict]:
-    """Return issues (key, summary, status) using provided JQL or a default built from fix_version."""
-    final_jql = _resolve_jql(jql, fix_version)
-    _jira_search(final_jql, max_results=1)  # validate
-    return _fetch_jira_issues(final_jql)
+def _self_test() -> int:
+    if _oauth is None:
+        print("Jira OAuth self-test failed: OAuth not configured")
+        return 1
+    try:
+        s = _oauth.session()
+        cid = _oauth._ensure_cloudid()
+        validate_jql_or_raise("ORDER BY updated DESC")
+        print(f"Jira OAuth self-test: OK (cloudid={cid})")
+        return 0
+    except Exception as e:
+        print(f"Jira OAuth self-test failed: {e}")
+        return 1
+
+
+try:
+    _oauth = JiraOAuth(
+        settings.ATLASSIAN_OAUTH_CLIENT_ID,
+        settings.ATLASSIAN_OAUTH_CLIENT_SECRET,
+        TOKEN_FILE,
+    )
+except Exception:
+    _oauth = None
+
+if __name__ == "__main__":
+    import sys
+    if "--self-test" in sys.argv:
+        sys.exit(_self_test())
+    print("Usage: python -m release_copilot.tools.jira_tools --self-test")
